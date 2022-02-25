@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eMM_HLCStatus" Id="{12d1a826-6eef-4502-ac6c-a63dab43c270}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eMM_HLCStatus :
+(
+	eHLC_STATE_INIT			:=16#1,
+	eHLC_STATE_DEGRADED		:=16#2,
+	eHLC_STATE_OPERATIONAL	:=16#3
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

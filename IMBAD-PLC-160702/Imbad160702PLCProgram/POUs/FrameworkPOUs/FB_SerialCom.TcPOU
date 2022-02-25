@@ -1,0 +1,341 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="FB_SerialCom" Id="{181e7c70-138b-446a-a6f5-34e588388885}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SerialCom
+VAR_IN_OUT
+	TxBuffer	: ComBuffer;
+	RxBuffer	: ComBuffer;
+END_VAR
+VAR
+	Timer		: TON := (PT:=T#1S);
+	fbSend		: SendString255;
+	bSendBusy	: BOOL;
+	eSendErrorID: ComError_t;
+    wYear : WORD;
+	sYear : STRING;
+	wMonth : WORD;
+	wDay : WORD;
+	wDOY : WORD;
+	fbReceive		: ReceiveString;
+	sReceivedString	: STRING;
+	sLastReceivedString: STRING;
+	bStringReceived	: BOOL;
+	bReceiveBusy	: BOOL;
+	bReceiveError	: BOOL;
+	eReceiveErrorID	: ComError_t;
+	bReceiveTimeout	: BOOL;
+	nReceiveCounter	: UDINT;
+	step			: DWORD 	:= 0;
+	bPrint			: BOOL := FALSE;(* Rising edge starts program execution *)
+	sCSVField		: T_MaxString := '';
+	bPremium        : BOOL := FALSE;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Call the send block every second to repeat the transmission.
+// Also call the block as long as it is busy to finish a transmission.
+CASE step OF
+	0:
+		IF bPrint THEN 
+			step := 1;
+			sCSVField :='';
+		END_IF	
+	
+   
+		
+	1:  
+	    sCSVField := CONCAT('A2>',LotsData.Lot.PartNumber);		
+		sCSVField := CONCAT(sCSVField,'$R$L');  // Part Number
+		step := 2;		
+		bPrint := TRUE;
+		//sCSVField := '$01$2A';
+	
+	2:	
+		IF bPrint OR fbSend.Busy THEN
+			fbSend(	SendString:= sCSVField,
+					TXbuffer:= TxBuffer,
+					Busy=> bSendBusy,
+					Error=> );			
+            bPrint := FALSE;			
+			IF fbSend.Error <> COMERROR_NOERROR THEN
+				eSendErrorID := fbSend.Error;
+			END_IF
+		ELSE 
+            step := 3;	// done printing // skipping 3 AND 4 here 
+			sCSVField :='';
+			bPrint := TRUE;
+		END_IF
+		
+	  3: 
+        sCSVField := CONCAT('A2>',LotsData.Lot.PartDescription); // Description
+		IF (bPremium) THEN
+			sCSVField := CONCAT(sCSVField, '-P'); 
+		ELSE
+			sCSVField := CONCAT(sCSVField, '-G'); 	
+		END_IF
+		sCSVField := CONCAT(sCSVField, '$R$L'); 
+        step := 4;	
+		
+	4: 
+	    IF bPrint OR fbSend.Busy THEN
+			fbSend(	SendString:= sCSVField,
+					TXbuffer:= TxBuffer,
+					Busy=> bSendBusy,
+					Error=> );			
+            bPrint := FALSE;			
+			IF fbSend.Error <> COMERROR_NOERROR THEN
+				eSendErrorID := fbSend.Error;
+			END_IF
+		ELSE 
+            step := 5;	// done printing
+			sCSVField :='';
+			bPrint := TRUE;
+		END_IF	
+	
+    5: 
+	   sCSVField := CONCAT('A2>',LotsData.Lot.PistonLotNumber); // Piston Lot Number
+	//   sCSVField := CONCAT(sCSVField,' , C Lot #: '); // Piston Lot Number
+	 //  sCSVField := CONCAT(sCSVField,LotsData.Lot.CapLotNumber); // Cap Lot Number
+       sCSVField := CONCAT(sCSVField, '$R$L'); 	    
+	   step := 6;
+	 
+	 6: 
+	    IF bPrint OR fbSend.Busy THEN
+			fbSend(	SendString:= sCSVField,
+					TXbuffer:= TxBuffer,
+					Busy=> bSendBusy,
+					Error=> );			
+            bPrint := FALSE;			
+			IF fbSend.Error <> COMERROR_NOERROR THEN
+				eSendErrorID := fbSend.Error;
+			END_IF
+		ELSE 
+            step := 7;	// done printing
+			sCSVField :='';
+			bPrint := TRUE;
+		END_IF	
+		
+	7:
+		sCSVField := CONCAT('A2>',LotsData.Lot.LotNumber ); // Lot Number
+        sCSVField := CONCAT(sCSVField,'$R$L');  		 
+		step := 8;     
+		
+	8: 
+	    IF bPrint OR fbSend.Busy THEN
+			fbSend(	SendString:= sCSVField,
+					TXbuffer:= TxBuffer,
+					Busy=> bSendBusy,
+					Error=> );			
+            bPrint := FALSE;			
+			IF fbSend.Error <> COMERROR_NOERROR THEN
+				eSendErrorID := fbSend.Error;
+			END_IF
+		ELSE 
+            step := 9;	// done printing
+			sCSVField :='';
+			bPrint := TRUE;
+		END_IF
+	
+	9:
+	    wMonth := Logging.fbCurrTime.systemTime.wMonth;
+		wYear := Logging.fbCurrTime.systemTime.wYear;
+		sYear := WORD_TO_STRING(wYear);
+		wDay := Logging.fbCurrTime.systemTime.wDay;
+		wDOY := F_GetDOYofYearMonthDay(wYear, wMonth, wDay);
+		sCSVField := WORD_TO_STRING(wDOY);
+		sCSVField := CONCAT(RIGHT(sYear,1),sCSVField);
+		sCSVField := CONCAT('A2>',sCSVField);
+       	//sCSVField := CONCAT('A1>','7200'); // replace this with Julian code programmatically	
+        sCSVField := CONCAT(sCSVField, '$R$L'); 		 
+	    step := 10;
+	
+    10: 
+	    IF bPrint OR fbSend.Busy THEN
+			fbSend(	SendString:= sCSVField,
+					TXbuffer:= TxBuffer,
+					Busy=> bSendBusy,
+					Error=> );			
+            bPrint := FALSE;			
+			IF fbSend.Error <> COMERROR_NOERROR THEN
+				eSendErrorID := fbSend.Error;
+			END_IF
+		ELSE 
+            step := 0; //13;	// done printing
+			sCSVField :='';			
+			bPrint := FALSE;
+		END_IF
+     
+	  
+      11: 
+	    sCSVField := CONCAT('A1>',LotsData.Lot.CapLotNumber); // Cap Lot Number
+		sCSVField := CONCAT(sCSVField, '$R$L'); 	    
+		
+        step := 10;
+       
+	 12: 
+	    IF bPrint OR fbSend.Busy THEN
+			fbSend(	SendString:= sCSVField,
+					TXbuffer:= TxBuffer,
+					Busy=> bSendBusy,
+					Error=> );			
+            bPrint := FALSE;			
+			IF fbSend.Error <> COMERROR_NOERROR THEN
+				eSendErrorID := fbSend.Error;
+			END_IF
+		ELSE 
+            step := 11;	// done printing
+			sCSVField :='';
+			bPrint := TRUE;
+		END_IF
+       
+	
+	
+	13:
+		sCSVField := CONCAT('rDMXFRM','$R$L'); 		
+		step := 14;	
+	14:
+	 	IF bPrint OR fbSend.Busy THEN
+			fbSend(	SendString:= sCSVField,
+					TXbuffer:= TxBuffer,
+					Busy=> bSendBusy,
+					Error=> );			
+            bPrint := FALSE;			
+			IF fbSend.Error <> COMERROR_NOERROR THEN
+				eSendErrorID := fbSend.Error;
+			END_IF
+		ELSE 
+            step := 21;	// done printing finally			
+		END_IF
+	
+	21:
+	 	//sCSVField := ('$02L$R$L'); // <STX>L 		
+		//sCSVField := CONCAT(sCSVField,'rDMXFRMA1$R$L');  // Recall Label
+		sCSVField := 'rDMXFRMA1$R$L';  // Recall Label
+		//sCSVField := CONCAT(sCSVField,'E$R$L');  // Terminate label format		
+        step := 22;
+        bPrint := TRUE;		
+    22:
+	    IF bPrint OR fbSend.Busy THEN
+			fbSend(	SendString:= sCSVField,
+					TXbuffer:= TxBuffer,
+					Busy=> bSendBusy,
+					Error=> );			
+            bPrint := FALSE;			
+			IF fbSend.Error <> COMERROR_NOERROR THEN
+				eSendErrorID := fbSend.Error;
+			END_IF
+		ELSE 
+            step := 0;	// done printing
+			sCSVField :='';
+			bPrint := TRUE;
+		END_IF	
+		
+	
+END_CASE
+
+fbReceive(
+	Timeout:= T#1S,
+	ReceivedString:= sReceivedString,
+	RXbuffer:= RxBuffer,
+	StringReceived=> bStringReceived,
+	Busy=> bReceiveBusy,
+	Error=> ,
+	RxTimeout=> bReceiveTimeout );
+IF fbReceive.Error <> COMERROR_NOERROR THEN
+	eReceiveErrorID := fbReceive.Error;
+END_IF
+IF bStringReceived THEN
+	nReceiveCounter := nReceiveCounter + 1;
+	sLastReceivedString := sReceivedString;
+END_IF
+]]></ST>
+    </Implementation>
+    <Method Name="M_PrintLabel" Id="{de54a325-1c05-4dd7-997d-2e788d918745}">
+      <Declaration><![CDATA[METHOD PUBLIC M_PrintLabel : BOOL
+VAR_INPUT
+	isPremium : BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (step =0) THEN
+	bPremium := isPremium;
+	bPrint := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_SerialCom">
+      <LineId Id="3" Count="2" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="380" Count="1" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="348" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="207" Count="0" />
+      <LineId Id="347" Count="0" />
+      <LineId Id="346" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="88" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="131" Count="3" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="12" Count="2" />
+      <LineId Id="89" Count="1" />
+      <LineId Id="215" Count="1" />
+      <LineId Id="498" Count="25" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="543" Count="0" />
+      <LineId Id="524" Count="1" />
+      <LineId Id="601" Count="1" />
+      <LineId Id="526" Count="16" />
+      <LineId Id="208" Count="2" />
+      <LineId Id="217" Count="0" />
+      <LineId Id="350" Count="0" />
+      <LineId Id="219" Count="2" />
+      <LineId Id="223" Count="12" />
+      <LineId Id="222" Count="0" />
+      <LineId Id="544" Count="25" />
+      <LineId Id="571" Count="0" />
+      <LineId Id="570" Count="0" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="268" Count="0" />
+      <LineId Id="266" Count="0" />
+      <LineId Id="283" Count="0" />
+      <LineId Id="285" Count="0" />
+      <LineId Id="353" Count="0" />
+      <LineId Id="352" Count="0" />
+      <LineId Id="287" Count="1" />
+      <LineId Id="290" Count="13" />
+      <LineId Id="289" Count="0" />
+      <LineId Id="284" Count="0" />
+      <LineId Id="310" Count="0" />
+      <LineId Id="309" Count="0" />
+      <LineId Id="324" Count="0" />
+      <LineId Id="329" Count="0" />
+      <LineId Id="331" Count="0" />
+      <LineId Id="326" Count="0" />
+      <LineId Id="333" Count="10" />
+      <LineId Id="332" Count="0" />
+      <LineId Id="475" Count="0" />
+      <LineId Id="477" Count="20" />
+      <LineId Id="476" Count="0" />
+      <LineId Id="327" Count="0" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="138" Count="2" />
+      <LineId Id="143" Count="11" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SerialCom.M_PrintLabel">
+      <LineId Id="8" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

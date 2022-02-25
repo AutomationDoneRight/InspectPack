@@ -1,0 +1,142 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="BurnOffStation" Id="{13ee2654-f908-4dad-a00a-52723e365b0f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK BurnOffStation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	HeaterONTimer : TON;
+	BlowerOFFTimer : TON;
+	PrevRunning, CurrRunning : BOOL := FALSE;
+	StartFromReset, StopAfterEStop : BOOL:=FALSE;	
+	BlowerEnable: BOOL := FALSE;
+	HeatEnable: BOOL := FALSE;
+	PIDEnable: BOOL := FALSE;
+	nErrorPIDStatus : UINT;
+	PIDOutput : LREAL;
+	VoltOutReal : LREAL;
+	fbBurnoffPID :FB_BasicPID;
+	// Temperature needs to be divided by 10 after reading from the TC card
+	fProcessValue: LREAL := 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[fProcessValue := GVL_IO.BU_Temperature/10;	
+STATUS.BurnOffTemperature := LREAL_TO_DINT(fProcessValue);
+
+IF (NOT LotsData.Lot.BurnOffEnabled OR STATIONS.fbMMMonitor.IsMMJammed OR Stations.fbCycleControl.StopRequested OR GVL_IO.MachineEStopped OR Status.BurnOffIdle) THEN
+	GVL_IO.BU_HeatCntl := 0;
+	GVL_IO.BU_BlowCntl := 0;
+ELSE 
+	// set the blower setpoint from the User configuration in HMI
+	GVL_IO.BU_BlowCntl := REAL_TO_INT(CONFIG.BU_BLOWER_SETPOINT/100*32000); 
+	IF ( GVL_IO.BU_BlowCntl > 32000) THEN
+		GVL_IO.BU_BlowCntl := 32000;
+	END_IF
+	// set the heater output based on proporational control with limits 
+	fbBurnoffPID (fSetpointValue:= LotsData.Lot.BurnOffTemp +25,
+					fActualValue := fProcessValue,
+					bReset := FALSE,
+					fCtrlCycleTime:=TIME_TO_LREAL(T#500MS),
+					fKp:=1000,
+					fTn:=0,//TIME_TO_LREAL(T#20MS),
+					fTv:=0,//TIME_TO_LREAL(T#200MS),
+					fTd:=0,//TIME_TO_LREAL(T#100MS),
+					fCtrlOutput =>PIDOutput,
+					nErrorStatus => nErrorPIDStatus);			
+	        
+	IF (PIDOutput>32767) THEN
+		PIDOutput := 32767; // full heat, a value of  0.5V will be sent to heater control element. We don't want to heater element too hot
+	END_IF
+	IF (PIDOutput<0) THEN
+		PIDOutput := 0; // No heat, a value of 0 V will be sent to heater control element
+	END_IF       
+		GVL_IO.BU_HeatCntl := LREAL_TO_INT(PIDOutput); // Write this data out to the Analog Output Card
+END_IF
+
+AssignStationStatusForHMI();		
+			
+			]]></ST>
+    </Implementation>
+    <Method Name="AssignStationStatusForHMI" Id="{c6c32236-a437-48e2-a462-5473689983ce}">
+      <Declaration><![CDATA[METHOD PUBLIC AssignStationStatusForHMI : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.StationsState[MM_CONST.BURNOFF_STA_HMI_STATE] := BOOL_TO_INT(HeatEnable);
+IF (LotsData.Lot.BurnOffEnabled) THEN
+	IF ((ABS(fProcessValue - LotsData.Lot.BurnOffTemp)) > 25) THEN  // to replace with actual setpoint from user screen
+    	Status.StationStauts[MM_CONST.BURNOFF_STA_HMI_STATE] := OverallStationStatus.eHoming;
+		Status.BurnOffStatusMsg:= 'Not At Temperature!';
+		Status.StationInfoString[MM_CONST.BURNOFF_STA_HMI_STATE] := 'Check BurnOff Leister Powered ON';
+	ELSE	
+		Status.StationStauts[MM_CONST.BURNOFF_STA_HMI_STATE] := OverallStationStatus.eRunning;
+		Status.BurnOffStatusMsg := 'At Temperature';
+		Status.StationInfoString[MM_CONST.BURNOFF_STA_HMI_STATE] := '';
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="IsAtTemperature" Id="{d9725ae4-5cbf-4d8e-8a7b-58a289bff5d5}">
+      <Declaration><![CDATA[PROPERTY PUBLIC IsAtTemperature : BOOL]]></Declaration>
+      <Get Name="Get" Id="{bbe5bd19-a129-42e2-8f92-618c33c117b4}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[IsAtTemperature := TRUE;//(Status.StationStauts[MM_CONST.BURNOFF_STA_HMI_STATE] = OverallStationStatus.eRunning);]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{35ee03f7-3981-461a-b5a2-7fb5e7251f2d}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="BurnOffStation">
+      <LineId Id="488" Count="0" />
+      <LineId Id="472" Count="0" />
+      <LineId Id="489" Count="0" />
+      <LineId Id="474" Count="2" />
+      <LineId Id="478" Count="0" />
+      <LineId Id="519" Count="0" />
+      <LineId Id="483" Count="2" />
+      <LineId Id="482" Count="0" />
+      <LineId Id="486" Count="0" />
+      <LineId Id="491" Count="0" />
+      <LineId Id="510" Count="8" />
+      <LineId Id="501" Count="6" />
+      <LineId Id="490" Count="0" />
+      <LineId Id="479" Count="0" />
+      <LineId Id="471" Count="0" />
+      <LineId Id="423" Count="1" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="BurnOffStation.AssignStationStatusForHMI">
+      <LineId Id="10" Count="0" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="132" Count="1" />
+      <LineId Id="124" Count="0" />
+      <LineId Id="126" Count="0" />
+      <LineId Id="134" Count="1" />
+      <LineId Id="125" Count="0" />
+      <LineId Id="128" Count="0" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="BurnOffStation.IsAtTemperature.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="BurnOffStation.IsAtTemperature.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

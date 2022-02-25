@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="U_MM_ResCmdDataDetail" Id="{01cf395b-6c30-4b98-a786-6c6b85b73e99}">
+    <Declaration><![CDATA[TYPE U_MM_ResCmdDataDetail :
+UNION	
+	D0Res		:ST_ResD0;
+    D1Res		:ST_ResD1;     
+	D2Res		:ST_ResD2;
+	D3Res		:ST_ResD3;
+	D4Res		:ST_ResD4;
+	D5Res		:ST_ResD5;
+	D7Res		:ST_ResD7;	
+END_UNION
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

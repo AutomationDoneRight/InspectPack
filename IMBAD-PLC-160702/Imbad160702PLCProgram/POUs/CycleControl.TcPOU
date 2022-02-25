@@ -1,0 +1,444 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="CycleControl" Id="{58fdd113-ff46-484b-bc19-22c90b9891bd}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC CycleControl
+VAR_IN_OUT
+	
+END_VAR
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	bInitialize : BOOL := TRUE;
+	bFirst: BOOL := TRUE;
+	State : eCycleControlState := eCycleControlState.eUnknown;
+	NextState : eCycleControlState := eCycleControlState.eUnknown;
+	byCounter: BYTE :=1;
+	StateTimer : TON;
+	//fbPID: FB_CTRL_PID;
+	CycleStopReq : BOOL := FALSE;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (bInitialize) THEN
+	bInitialize := FALSE;
+	// to add all initialization code here
+END_IF
+
+
+CASE State OF
+eCycleControlState.eUnknown:
+	IF (GVL_IO.MC_XStartPB AND GVL_IO.MC_XAirPressureOK AND GVL_IO.MC_NotEStopped) THEN // wait for start button when powered up or PLC program restarted
+		NextState := eCycleControlState.eInit;	   
+	END_IF
+    StackLightRed();
+	
+	StateTimer(IN:=TRUE, PT:= T#10S); // give a message out every 10 seconds
+	IF (StateTimer.Q) THEN
+		Logging.fbEventMsg.SendEventMsg(MsgClass := TCEVENTCLASS_STATEINFO, EventID:= Logging.ID_CY_Unknown, SourceID:= Logging.SrcCyclePOU);
+		StateTimer(IN:=FALSE);
+	END_IF
+
+eCycleControlState.eInit:
+	IF (Stations.fbPrimeMover.WaitingForHomingTrigger) THEN  // checking to see if Magnemotion has completed software Path reset and HLC operational
+		NextState := eCycleControlState.eWaitForHoming;
+	END_IF
+	StateTimer(IN:=TRUE, PT := T#250MS);
+	IF (StateTimer.Q) THEN
+		GVL_IO.MC_YStackLightRed := NOT GVL_IO.MC_YStackLightRed;
+		GVL_IO.MC_YStackLightYellow := NOT GVL_IO.MC_YStackLightYellow;
+		GVL_IO.MC_YStackLightGreen := NOT GVL_IO.MC_YStackLightGreen;
+		StateTimer(IN:=FALSE);
+	END_IF
+	
+
+eCycleControlState.eWaitForHoming:
+	(*IF(Stations.fbPistonSta.Ready AND Stations.fbCapInsertSta.Ready AND Stations.fbGoodUnloadSta.Ready AND Stations.fbRejectSta.Ready) THEN
+		NextState := eCycleControlState.eReady;
+	END_IF *)
+	StackLightYellow();
+	IF(Stations.fbLoad1Sta.Ready AND
+       Stations.fbVisionSta.Ready AND  
+       Stations.fbPistonSta.Ready AND 
+       Stations.fbCapInsertSta.Ready AND 
+       //Stations.fbGoodUnloadSta.Ready AND
+       Stations.fbGoodULSta_1.Ready AND
+		Stations.fbGoodULSta_2.Ready AND
+		Stations.fbGoodULSta_3.Ready AND
+		Stations.fbGoodULSta_4.Ready AND     
+		Stations.fbAutoBagger.Ready AND     
+	   Stations.fbRejectSta.Ready  
+       ) THEN
+		NextState := eCycleControlState.eReady;
+		StackLightGreen();
+		Stations.fbPrimeMover.TriggerAction := TRUE; // Enable the Magnemotion controller bus propulsion
+	END_IF
+
+eCycleControlState.eReady:
+	//IF (GVL_IO.MC_XStartPB) THEN //need to change this later
+		NextState := eCycleControlState.eAutoRun;   //don't really need this start button again 			
+	//END_IF	
+
+eCycleControlState.eAutoRun:
+	IF(bFirst) THEN
+		FOR byCounter := 1 TO MM_CONST.MAX_VEHICLES BY 1 DO
+			Stations.fbVehicleManager[byCounter].M_SetNextMoveParams(MM_CONST.REJECT_ULOAD_POS,2.0,2.0,MM_CONST.REJECT_ULOAD_STA);
+			Stations.fbVehicleManager[byCounter].TriggerVehMov := TRUE;			
+		END_FOR	
+	END_IF
+	// to do add logic here to handle cycle stop
+	NextState := eCycleControlState.eStartStop ;
+
+eCycleControlState.eStartStop:	
+	IF( Stations.fbMMMonitor.IsMMJammed OR 
+		Stations.fbLoad1Sta.IsFaulted() OR 
+		NOT Stations.fbBurnOffSta.IsAtTemperature OR 
+		Stations.fbVisionSta.IsFaulted() OR 
+        Stations.fbPistonSta.IsFaulted() OR 
+       Stations.fbCapInsertSta.IsFaulted() OR 
+       //Stations.fbGoodUnloadSta.IsFaulted() OR
+		Stations.fbGoodULSta_1.IsFaulted() OR
+		Stations.fbGoodULSta_2.IsFaulted() OR
+		Stations.fbGoodULSta_3.IsFaulted() OR
+		Stations.fbGoodULSta_4.IsFaulted() OR
+		Stations.fbAutoBagger.IsFaulted() OR		            
+        Stations.fbRejectSta.IsFaulted()) 
+       THEN 
+			StackLightRed();
+			GVL_IO.YU_YIMBADIsOK := FALSE;
+	END_IF
+	
+    IF( NOT Stations.fbMMMonitor.IsMMJammed AND
+		NOT Stations.fbLoad1Sta.IsFaulted() AND 
+	    Stations.fbBurnOffSta.IsAtTemperature AND 
+	    NOT Stations.fbVisionSta.IsFaulted() AND 
+        NOT Stations.fbPistonSta.IsFaulted() AND 
+        NOT Stations.fbCapInsertSta.IsFaulted() AND 
+        //NOT Stations.fbGoodUnloadSta.IsFaulted() AND
+        NOT Stations.fbGoodULSta_1.IsFaulted() AND
+		NOT Stations.fbGoodULSta_2.IsFaulted() AND
+		NOT Stations.fbGoodULSta_3.IsFaulted() AND
+		NOT Stations.fbGoodULSta_4.IsFaulted() AND   
+		NOT Stations.fbAutoBagger.IsFaulted() AND
+        NOT Stations.fbRejectSta.IsFaulted()) 
+    THEN 
+			StackLightGreen(); 
+			GVL_IO.YU_YIMBADIsOK := TRUE;
+	END_IF
+    
+    IF (NOT GVL_IO.MC_XStopPB) THEN // hit the stop button
+		CycleStopReq := TRUE;		
+	END_IF
+	
+    IF (GVL_IO.MC_XStopPB AND GVL_IO.MC_XStartPB) THEN 
+		CycleStopReq := FALSE;		
+	END_IF
+    
+   IF (GVL_IO.MachineEStopped OR NOT GVL_IO.MC_XAirPressureOK ) THEN 
+		NextState := eCycleControlState.eWaitForHomingAfterEStop;
+		StackLightRed();
+    END_IF
+	
+	IF CycleStopReq THEN
+		StackLightYellow(); // we have a stop request
+	END_IF
+	
+	
+eCycleControlState.eWaitForHomingAfterEStop:
+
+	IF (GVL_IO.MC_XAirPressureOK AND GVL_IO.MC_NotEStopped) THEN // wait for start button when powered up or PLC program restarted
+		IF(Stations.fbPistonSta.Ready AND Stations.fbCapInsertSta.Ready
+        //AND Stations.fbGoodUnloadSta.Ready
+        AND Stations.fbGoodULSta_1.Ready
+		AND Stations.fbGoodULSta_2.Ready
+		AND Stations.fbGoodULSta_3.Ready
+		AND Stations.fbGoodULSta_4.Ready 
+        AND Stations.fbVisionSta.Ready ) THEN // Maybe add other stations here as well
+			NextState := eCycleControlState.eStartStop;
+			StackLightGreen();
+		END_IF
+		IF (GVL_IO.MC_XStopPB AND GVL_IO.MC_XStartPB) THEN
+			CycleStopReq := FALSE;
+			///Stations.fbMMSendMsg.M_CmdResumeMov(); // allow accepting commands for vehicle movement ?? Need to try this
+		END_IF		
+	END_IF
+	
+	
+eCycleControlState.eError:	
+//fbPID;
+
+IF (GVL_IO.MC_XStartPB) THEN 
+	GVL_IO.MC_YStackLightYellow := TRUE;
+END_IF
+
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+	StateTimer(IN:=FALSE);
+ELSE 
+	bFirst := FALSE;	
+END_IF
+
+State := NextState;
+Status.StationsState[MM_CONST.CYCLE_CONTROL_HMI_STATE] := State;
+AssignStationStatusForHMI();
+AssignErrorMessagetoHMI();]]></ST>
+    </Implementation>
+    <Property Name="AllowPrimeMoverEnable" Id="{5f4a2e5a-4a5f-43c2-a3f8-82087769331c}">
+      <Declaration><![CDATA[PROPERTY AllowPrimeMoverEnable : BOOL]]></Declaration>
+      <Get Name="Get" Id="{3196fff4-4ebc-4d02-b488-78f81e0b1cd5}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[AllowPrimeMoverEnable := (State = eCycleControlState.eStartStop);]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="AssignErrorMessagetoHMI" Id="{d113c449-15a8-492f-9d46-0b24f9e78455}">
+      <Declaration><![CDATA[METHOD PUBLIC AssignErrorMessagetoHMI : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (Stations.fbMMMonitor.IsMMJammed) THEN
+	Status.ErrorMessage := Status.PrimeMoverStatusMsg;
+ELSIF (Stations.fbLoad1Sta.IsFaulted()) THEN
+	Status.ErrorMessage := Status.Load1StatusMsg;
+ELSIF(Stations.fbVisionSta.IsFaulted()) THEN
+	Status.ErrorMessage := Status.VisionStatusMsg;
+ELSIF(Stations.fbPistonSta.IsFaulted()) THEN
+	Status.ErrorMessage := Status.PistonStatusMsg;
+ELSIF(Stations.fbCapInsertSta.IsFaulted()) THEN
+	Status.ErrorMessage := Status.CapStatusMsg; 
+//ELSIF(Stations.fbGoodUnloadSta.IsFaulted()) THEN
+//	Status.ErrorMessage := Status.GoodULStatusMsg;    
+ELSIF(Stations.fbGoodULSta_1.IsFaulted()) THEN
+	Status.ErrorMessage := Status.GoodUL_1_StatusMsg;       
+ELSIF(Stations.fbGoodULSta_2.IsFaulted()) THEN
+	Status.ErrorMessage := Status.GoodUL_2_StatusMsg;
+ELSIF(Stations.fbGoodULSta_3.IsFaulted()) THEN
+	Status.ErrorMessage := Status.GoodUL_3_StatusMsg;
+ELSIF(Stations.fbGoodULSta_4.IsFaulted()) THEN
+	Status.ErrorMessage := Status.GoodUL_4_StatusMsg;
+ELSIF(Stations.fbRejectSta.IsFaulted()) THEN
+	Status.ErrorMessage := Status.RejectStatusMsg;
+ELSIF(Stations.fbAutoBagger.IsFaulted()) THEN
+	Status.ErrorMessage := Status.AutoBaggerStatusMsg;
+ELSIF (Stations.fbLoad1Sta.IsLoadWaitingForYushin()) THEN
+	Status.ErrorMessage := Status.Load1StatusMsg;	
+ELSE
+	Status.ErrorMessage := '';
+END_IF ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="AssignStationStatusForHMI" Id="{f190938e-20bb-4dae-83f5-35f6d694ca0e}">
+      <Declaration><![CDATA[METHOD PUBLIC AssignStationStatusForHMI : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.StationsState[MM_CONST.CYCLE_CONTROL_HMI_STATE] := State;
+
+CASE State OF 
+	eCycleControlState.eUnknown, eCycleControlState.eError:
+		Status.StationStauts[MM_CONST.CYCLE_CONTROL_HMI_STATE] := OverallStationStatus.eError;
+    eCycleControlState.eInit,eCycleControlState.eWaitForHoming:
+	    Status.StationStauts[MM_CONST.CYCLE_CONTROL_HMI_STATE] := OverallStationStatus.eHoming;
+	eCycleControlState.eReady,eCycleControlState.eAutoRun,eCycleControlState.eStartStop:
+	    IF (CycleStopReq) THEN
+			Status.StationStauts[MM_CONST.CYCLE_CONTROL_HMI_STATE] := OverallStationStatus.eCycleStop;
+        ELSE 
+			Status.StationStauts[MM_CONST.CYCLE_CONTROL_HMI_STATE] := OverallStationStatus.eRunning;	
+		END_IF
+	    
+	eCycleControlState.eWaitForHomingAfterEStop:
+	    IF (GVL_IO.MC_XAirPressureOK AND GVL_IO.MC_NotEStopped) THEN
+	         Status.StationStauts[MM_CONST.CYCLE_CONTROL_HMI_STATE] := OverallStationStatus.eHoming;
+	    ELSE 
+			Status.StationStauts[MM_CONST.CYCLE_CONTROL_HMI_STATE] := OverallStationStatus.eCycleStop;
+		END_IF   
+		
+	ELSE;	
+END_CASE
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ResetCycleControlState" Id="{c33497ba-c3f3-4175-8736-bbfc84f27854}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetCycleControlState : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[State:= eCycleControlState.eUnknown;
+NextState:= eCycleControlState.eUnknown;
+CycleStopReq := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="StackLightGreen" Id="{a052c037-25db-44b5-8e42-fa7213d15246}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.MC_YStackLightRed := FALSE;
+GVL_IO.MC_YStackLightYellow := FALSE;
+GVL_IO.MC_YStackLightGreen := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="StackLightRed" Id="{8005133c-1b60-49d8-97ca-5d508d6d0a8f}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.MC_YStackLightRed := TRUE;
+GVL_IO.MC_YStackLightYellow := FALSE;
+GVL_IO.MC_YStackLightGreen := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="StackLightYellow" Id="{af2ca68d-32b0-4630-9a6e-83b4cea5d386}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.MC_YStackLightRed := FALSE;
+GVL_IO.MC_YStackLightYellow := TRUE;
+GVL_IO.MC_YStackLightGreen := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Property Name="StopRequested" Id="{5651dcfc-7127-4890-8cef-ea7d9c2f94ce}">
+      <Declaration><![CDATA[PROPERTY PUBLIC StopRequested : BOOL]]></Declaration>
+      <Get Name="Get" Id="{d3a7b526-c72d-49f4-8a3b-3c559b8c50a1}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[StopRequested := CycleStopReq;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{e777eac5-6337-412a-9d2a-a68f76ca98c2}">
+        <Declaration><![CDATA[PUBLIC 
+VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[CycleStopReq := StopRequested;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="CycleControl">
+      <LineId Id="411" Count="37" />
+      <LineId Id="577" Count="0" />
+      <LineId Id="576" Count="0" />
+      <LineId Id="567" Count="1" />
+      <LineId Id="623" Count="3" />
+      <LineId Id="676" Count="0" />
+      <LineId Id="570" Count="0" />
+      <LineId Id="449" Count="22" />
+      <LineId Id="579" Count="0" />
+      <LineId Id="581" Count="0" />
+      <LineId Id="580" Count="0" />
+      <LineId Id="578" Count="0" />
+      <LineId Id="549" Count="1" />
+      <LineId Id="654" Count="3" />
+      <LineId Id="677" Count="0" />
+      <LineId Id="572" Count="0" />
+      <LineId Id="555" Count="0" />
+      <LineId Id="472" Count="2" />
+      <LineId Id="562" Count="0" />
+      <LineId Id="475" Count="0" />
+      <LineId Id="583" Count="2" />
+      <LineId Id="582" Count="0" />
+      <LineId Id="556" Count="1" />
+      <LineId Id="635" Count="3" />
+      <LineId Id="678" Count="0" />
+      <LineId Id="561" Count="0" />
+      <LineId Id="574" Count="0" />
+      <LineId Id="476" Count="3" />
+      <LineId Id="563" Count="0" />
+      <LineId Id="480" Count="0" />
+      <LineId Id="485" Count="1" />
+      <LineId Id="564" Count="0" />
+      <LineId Id="487" Count="2" />
+      <LineId Id="565" Count="0" />
+      <LineId Id="490" Count="12" />
+      <LineId Id="639" Count="0" />
+      <LineId Id="641" Count="0" />
+      <LineId Id="645" Count="2" />
+      <LineId Id="640" Count="0" />
+      <LineId Id="503" Count="27" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="604" Count="0" />
+    </LineIds>
+    <LineIds Name="CycleControl.AllowPrimeMoverEnable.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="CycleControl.AssignErrorMessagetoHMI">
+      <LineId Id="6" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="48" Count="1" />
+      <LineId Id="32" Count="1" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+    <LineIds Name="CycleControl.AssignStationStatusForHMI">
+      <LineId Id="35" Count="0" />
+      <LineId Id="6" Count="1" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="49" Count="1" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="54" Count="2" />
+      <LineId Id="32" Count="2" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="61" Count="1" />
+      <LineId Id="60" Count="0" />
+    </LineIds>
+    <LineIds Name="CycleControl.ResetCycleControlState">
+      <LineId Id="6" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="CycleControl.StackLightGreen">
+      <LineId Id="2" Count="1" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="CycleControl.StackLightRed">
+      <LineId Id="2" Count="1" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="CycleControl.StackLightYellow">
+      <LineId Id="2" Count="1" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="CycleControl.StopRequested.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="CycleControl.StopRequested.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

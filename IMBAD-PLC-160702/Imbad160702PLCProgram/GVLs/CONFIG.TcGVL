@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <GVL Name="CONFIG" Id="{007a93a1-f8cd-4863-a1dd-ffc76184945d}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL PERSISTENT 
+	BU_BLOWER_OFF_TIMER : REAL;
+    BU_BLOWER_SETPOINT	 : REAL;
+ //   BU_HEATER_SETPOINT	 : REAL;
+	BU_P_GAIN :REAL;
+	BU_I_GAIN :REAL;
+	BU_D_GAIN :REAL;
+	PremiumCount1 : UINT := 0;
+	PremiumCount2 : UINT := 0;
+	GoodCount1 : UINT := 0;
+	GoodCount2 : UINT := 0;
+END_VAR
+
+VAR_GLOBAL
+	CAP_INSTALL_RETRIES : BYTE := 2;
+    CAP_PICKUP_RETRIES : BYTE := 3;	
+END_VAR
+
+VAR_GLOBAL CONSTANT
+	MAX_CAVITY : BYTE := 16;
+	MAX_CSV_ROWS : DWORD := 50000; // more than a three shifts worth of data
+	MAX_CSV_COLUMNS : BYTE := 50;
+	MAX_CSV_FIELD_LENGTH : BYTE := 100;
+END_VAR
+
+VAR_GLOBAL CONSTANT
+	HMI_STATIONS_NUMB : BYTE :=22;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

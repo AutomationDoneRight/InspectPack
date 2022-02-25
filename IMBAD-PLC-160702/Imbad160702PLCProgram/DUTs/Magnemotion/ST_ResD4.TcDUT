@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_ResD4" Id="{d192f685-48f3-4261-9d6b-35989f76f680}">
+    <Declaration><![CDATA[TYPE ST_ResD4 :
+STRUCT
+	PathID						:UINT;
+	PathPresent					:BYTE;
+	NumbVehicles				:BYTE;
+	PathState					:BYTE;
+	PathMoveStatus				:BYTE;
+	UpStreamCommLinkStatus		:BYTE;
+	DownStreamCommLinkStatus	:BYTE;
+	CRC1						:BYTE;	    (* 1 byte*)
+	CRC2						:BYTE;	    (* 1 byte*)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,77 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="EventMsgParams" Id="{eb16ca0e-af54-4630-b5ca-b77de0962b32}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC EventMsgParams
+VAR_INPUT
+	
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	CfgEvent                : TcEvent;
+    fbEvent                 : ADSLOGEVENT;
+    bSetEvent               : BOOL;(* Rising edge sets event *)
+    eventData               : ST_EventData;
+    TcEventDataFormatString : STRING    := '%f%d';
+	bInitialize : BOOL := TRUE;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (bInitialize) THEN
+	CfgEvent.Class := TCEVENTCLASS_ALARM;
+	CfgEvent.Prio := 2;
+	CfgEvent.Id := 1;
+	CfgEvent.SourceId := 17001;
+	CfgEvent.bQuitRequired := FALSE;//TRUE;
+	CfgEvent.DataFormatStrAddress := ADR(TcEventDataFormatString);
+	CfgEvent.Flags := TCEVENTFLAG_LOG OR TCEVENTFLAG_SRCID OR TCEVENTFLAG_AUTOFMTALL;
+	CfgEvent.StreamType := TCEVENTSTREAM_SIMPLE;
+	CfgEvent.ProgId :='TcEventFormatter.TcXMLFormatter' ;	
+	eventData.rVal     := 0.00;
+	eventData.iVal    := 0;
+	bInitialize:= FALSE;	
+END_IF
+
+fbEvent(Event:=FALSE);]]></ST>
+    </Implementation>
+    <Method Name="SendEventMsgParams" Id="{52991bbc-184b-40c6-bfc9-bb715b8eaabc}">
+      <Declaration><![CDATA[METHOD PUBLIC SendEventMsgParams : BOOL
+VAR_INPUT
+	MsgClass :		UDINT;
+	EventID :		UDINT;
+	SourceID : 		UDINT;
+	RealVal: 		LREAL;
+	IntVal :  		UDINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CfgEvent.Class := MsgClass;
+CfgEvent.Id := EventID;
+CfgEvent.SourceId := SourceID;
+eventData.rVal := RealVal;
+eventData.iVal := IntVal;
+fbEvent( NETID:= '',
+        PORT:= 110,
+        Event:=TRUE,
+        EventConfigData:= CfgEvent,
+        EventDataAddress := ADR(eventData) ,
+    	EventDataLength := SIZEOF(eventData),
+        TMOUT:= T#3S);		]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="EventMsgParams">
+      <LineId Id="22" Count="0" />
+      <LineId Id="24" Count="10" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="35" Count="1" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="EventMsgParams.SendEventMsgParams">
+      <LineId Id="11" Count="1" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="20" Count="5" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

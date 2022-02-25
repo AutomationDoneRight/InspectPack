@@ -1,0 +1,241 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.3">
+  <POU Name="Load4Station" Id="{7a5f58c4-4a71-40f0-bb29-10f5624d8fc7}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK Load4Station
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : eLoadSta4State := eLoadSta4State.eUnknown;
+	NextState : eLoadSta4State := eLoadSta4State.eUnknown;
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;
+	LoadingComplete : BOOL := FALSE;
+	CycleNumb: INT := 0;
+	RowNumber :INT:=0;
+	SeedNumber : INT:=1;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (GVL_IO.MachineEStopped) THEN 
+	State := eLoadSta4State.eUnknown;
+	NextState := eLoadSta4State.eUnknown;
+END_IF
+
+CASE State OF
+
+eLoadSta4State.eUnknown:
+	NextState := eLoadSta4State.eReady;
+
+eLoadSta4State.eInit:
+
+eLoadSta4State.eHoming:
+
+eLoadSta4State.eReady:
+
+	IF (xTrigger) THEN
+		NextState := eLoadSta4State.eWaitForLoadComplete;
+		
+		DwellTimer(IN:=FALSE);		
+	END_IF
+
+eLoadSta4State.eDwell:
+
+
+eLoadSta4State.eWaitForLoadComplete:
+	 IF (LoadingComplete) THEN
+		NextState := eLoadSta4State.eDepart;
+		UpdatePartData();
+		LoadingComplete := FALSE;
+		DwellTimer(IN:=FALSE);
+	END_IF
+	
+eLoadSta4State.eProcessing:
+
+
+eLoadSta4State.eDepart:
+	Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.LOAD_4_STA, VehicleID := VUT);
+	xTrigger := FALSE;
+    IF (Stations.fbCycleControl.StopRequested) THEN
+		NextState := eLoadSta4State.eStopActive;
+	ELSE	
+		NextState := eLoadSta4State.eReady;	
+	END_IF
+
+eLoadSta4State.eStopActive:
+	IF (NOT Stations.fbCycleControl.StopRequested) THEN
+		NextState := eLoadSta4State.eReady;
+	END_IF
+
+eLoadSta4State.eError:
+
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+Status.StationsState[MM_CONST.LOAD_4_STA_HMI_STATE] := State;]]></ST>
+    </Implementation>
+    <Method Name="ClearVehicleTrigger" Id="{98324f79-9da3-46f6-bb5a-ee98087427e2}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="LoadComplete" Id="{38483af5-d682-4f0a-b45d-5a6e7dd8801f}">
+      <Declaration><![CDATA[PROPERTY PUBLIC LoadComplete : BOOL]]></Declaration>
+      <Set Name="Set" Id="{585a7733-b4b7-419b-819f-d7b14b63950f}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[LoadingComplete := LoadComplete;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="ResetState" Id="{092af0ca-d838-4202-bdc5-3b60db42d280}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetState : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	State := eLoadSta4State.eUnknown;
+	NextState := eLoadSta4State.eUnknown;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetRowNumber" Id="{727445d8-daa3-448a-95e9-5252fb26b5b7}">
+      <Declaration><![CDATA[METHOD PUBLIC SetRowNumber : BOOL
+VAR_INPUT
+	RowLocationNumber : INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[RowNumber := RowLocationNumber;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Trigger" Id="{5ea3908a-a725-4710-88a3-33e2ff35bebf}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{d9c9462e-68f2-4479-a604-d9e870ecfeea}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="UpdatePartData" Id="{a44c1ff4-47d6-4eda-845b-1530edd6d866}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdatePartData : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[memset(ADR(PartsData.Status[VUT]),0,SIZEOF(PartDataType));
+PartsData.Status[VUT].LoadTime := SYSTEMTIME_TO_STRING(Logging.fbCurrTime.systemTime);
+//PartsData.Status[VUT].CavityNumber := 13 + (CycleNumb MOD 4);
+PartsData.Status[VUT].CavityNumber := RowNumber + SeedNumber;
+CycleNumb := CycleNumb+1; // Use this till Yushin Robot sends out this information with Bit Location ID
+PartsData.Status[VUT].OverallStatus := ePartStatus.eLoaded; // At least that is the assumption. We may want to check on how to turn off cavities later, but this will be caught by vision.
+PartsData.Status[VUT].BarrelSize := LotsData.Lot.BarrelSize; // we are copying this data in case we might in future want to have more than one lots running at the same time on the machine
+PartsData.Status[VUT].PartNumber := LotsData.Lot.PartNumber; // we are copying this data in case we might in future want to have more than one lots running at the same time on the machine
+PartsData.Status[VUT].LotNumber := LotsData.Lot.LotNumber; // we are copying this data in case we might in future want to have more than one lots running at the same time on the machine]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="VehicleUnderTest" Id="{6a0e2e28-7606-43ed-8aa4-9124c532ff0c}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{78054811-cff8-4830-b046-9fdb999766c9}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{09b44ece-f5e9-43ef-9aaf-1fa3c99a4957}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="Load4Station">
+      <LineId Id="103" Count="2" />
+      <LineId Id="101" Count="1" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="70" Count="1" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="44" Count="3" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="79" Count="2" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="82" Count="2" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="179" Count="11" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="85" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="13" Count="7" />
+      <LineId Id="129" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="Load4Station.ClearVehicleTrigger">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load4Station.LoadComplete.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load4Station.ResetState">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load4Station.SetRowNumber">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load4Station.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load4Station.UpdatePartData">
+      <LineId Id="13" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="10" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load4Station.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load4Station.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

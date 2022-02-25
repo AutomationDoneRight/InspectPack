@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eRejectStaState" Id="{e5f03f30-2017-4ce3-8c14-0f53d9bf6487}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eRejectStaState :
+( 
+	eUnknown := 701,
+    eInit,
+	eHoming,
+	eReady,
+	eWaitForVehicleTrigger,
+	eDwell,
+	eSendPalletHoldDownExtend,
+	eCheckPalletHoldDownExtended,
+	ePalletReleaseExtend,
+	ePalletReleaseExtended,
+	eKnockoffPart,
+	eKnockoffExtended,
+	eCheckPartKnockedOff,
+	ePalletHoldDownRelease,
+	ePalletHoldDownReleased,
+	eDepart,
+	eStopActive,
+    eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

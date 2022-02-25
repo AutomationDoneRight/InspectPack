@@ -1,0 +1,77 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <DUT Name="eAutoBaggerState" Id="{f6586c88-31d9-47be-8679-fcc9fe371978}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eAutoBaggerState :
+(
+	eUnknown  :=1 ,
+	
+	eError,
+
+//Init? send label delete, reset, etc?
+	eInit,
+	
+// Check if bagger is not faulted and waiting for label	and has no low bag warning
+    eCheckWaitingLabel,
+
+//wait for one chute to fill up
+	eReady,
+
+//open trap door, selecting correct one
+//wait for 2 seconds or something
+	eDropParts,
+
+	eDoorCannotOpen,
+	
+//then close the trap door
+    eHalfCloseTrapDoor,
+    
+    eOpenTrapDoor,
+	
+	eOpenTrapDoorFinal,
+	
+	eCloseTrapDoor,
+	
+	eCloseTrapDoorFinal,
+	
+	eDoorCannotClose,
+
+//send label and print command
+	eSendLabel,
+	
+	eMissingBusySignal,
+	
+	eMissingBusySignal2,
+	
+	eMissingNotBusySignal,
+
+//wait for bagger ready, then send feeder ready command
+	eDetachBag1,
+	
+	eDetachBag2,
+	
+	eFeederReadyReset1,
+	
+	eFeederReadyReset2,
+	
+	eWaitForBaggerNotBusy,
+	
+	eWaitForBaggerBusy,
+	
+	eWaitForBagOpen,
+	
+	eHandleBagOpenError,
+	
+	eTriggerBagger,
+	
+	eWaitforBaggingStart,
+	
+	eWaitforBaggingComplete
+
+
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

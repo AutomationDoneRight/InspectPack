@@ -1,0 +1,257 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="MM_MsgFormatter" Id="{36fcff18-e0ff-4624-a384-f35158b05987}" SpecialFunc="None">
+    <Declaration><![CDATA[(* Implements the Magnemotion TCP/IP Protocol and adds to TxFifo*)
+FUNCTION_BLOCK PUBLIC MM_MsgFormatter
+VAR_IN_OUT
+	fbTx 	:	FB_Tx_FrameFifo;
+	fbLog	:	FB_LogFifo;
+END_VAR
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	stToServer		: ST_MM_TxFrame; (* Tx user data *)
+	sLogMessage 	: T_MaxString := '';(* Log/debug/error message *)
+	udiOrderNumb	: UDINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[;]]></ST>
+    </Implementation>
+    <Method Name="M_CmdHLCStatus" Id="{cfb28214-fcc3-4671-9422-16e5eee5153d}">
+      <Declaration><![CDATA[(* Request Status for HLC *)
+METHOD PUBLIC M_CmdHLCStatus : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	ID 		:UINT;
+	CRC		:UINT;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(* Request Status for HLC *)
+	stToServer.StartBytes := HOST_TO_BE16(16#ABBA);
+	stToServer.MsgLength  := MM_CONST.B5_CMD_LEN;
+	stToServer.DataArray[0] := 16#B5;	
+	stToServer.DataArray[1] := MM_CONST.STATUS_REQ_TYPE_HLC;
+	ID := HOST_TO_BE16(16#0); (* can be omitted, but kept here for msg length*)	
+	memcpy(ADR(stToServer.DataArray[2]), ADR(ID),SIZEOF(UINT));
+    stToServer.DataArray[4]	:= 16#0; (* can be omitted, but kept here for msg length*)
+	CRC := HOST_TO_BE16(F_DATA_TO_CRC16_CCITT(ADR(stToServer),MM_CONST.B5_CMD_LEN+MM_CONST.CRC_CALC_LEN_ADJUST,16#FFFF));
+	memcpy(ADR(stToServer.DataArray[5]), ADR(CRC),SIZEOF(UINT));
+ 	fbTx.AddTail( stPut := stToServer );(* Put user data to the tx fifo *)
+	IF NOT fbTx.bOk THEN(* Fifo overflow => Log error *)
+		fbLog.Error( sMessage := 'FB_FrameFifo(sender)', nErrID := MM_CONST.PLCPRJ_ERROR_SENDFIFO_OVERFLOW );
+	END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CmdResetPath" Id="{acd22078-a258-46f8-92b7-cd7e1b5ef5b2}">
+      <Declaration><![CDATA[(* Reset Cmd for all paths *)
+METHOD PUBLIC M_CmdResetPath : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	PathID	:	UINT;
+	CRC		:	UINT;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(* Reset Cmd for all paths *)
+	stToServer.StartBytes := HOST_TO_BE16(16#ABBA);
+	stToServer.MsgLength  := MM_CONST.B8_CMD_LEN;	
+	stToServer.DataArray[0] := 16#B8;	
+	PathID		:= HOST_TO_BE16(0);		
+	memcpy(ADR(stToServer.DataArray[1]), ADR(PathID),SIZEOF(UINT));    
+	CRC := HOST_TO_BE16(F_DATA_TO_CRC16_CCITT(ADR(stToServer),MM_CONST.B8_CMD_LEN+MM_CONST.CRC_CALC_LEN_ADJUST,16#FFFF));
+	memcpy(ADR(stToServer.DataArray[3]), ADR(CRC),SIZEOF(UINT));
+	fbTx.AddTail( stPut := stToServer );(* Put user data to the tx fifo *)
+	IF NOT fbTx.bOk THEN(* Fifo overflow => Log error *)
+		fbLog.Error( sMessage := 'FB_FrameFifo(sender)', nErrID := MM_CONST.PLCPRJ_ERROR_SENDFIFO_OVERFLOW );
+	END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CmdResumeMov" Id="{8bc50c15-5090-4de5-88ea-e3765f8f5ef5}">
+      <Declaration><![CDATA[METHOD PUBLIC M_CmdResumeMov : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	PathID 		:UINT;
+	CRC		:UINT;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	stToServer.StartBytes := HOST_TO_BE16(16#ABBA);
+	stToServer.MsgLength  := MM_CONST.B2_CMD_LEN;	
+	stToServer.DataArray[0] := 16#B3;	
+	PathID		:= HOST_TO_BE16(0);		
+	memcpy(ADR(stToServer.DataArray[1]), ADR(PathID),SIZEOF(UINT));    
+	CRC := HOST_TO_BE16(F_DATA_TO_CRC16_CCITT(ADR(stToServer),MM_CONST.B8_CMD_LEN+MM_CONST.CRC_CALC_LEN_ADJUST,16#FFFF));
+	memcpy(ADR(stToServer.DataArray[3]), ADR(CRC),SIZEOF(UINT));
+	fbTx.AddTail( stPut := stToServer );(* Put user data to the tx fifo *)
+	IF NOT fbTx.bOk THEN(* Fifo overflow => Log error *)
+		fbLog.Error( sMessage := 'FB_FrameFifo(sender)', nErrID := MM_CONST.PLCPRJ_ERROR_SENDFIFO_OVERFLOW );
+	END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CmdStartupPath" Id="{a7051bb2-4c94-48c1-9f6e-77de2d2f4cf7}">
+      <Declaration><![CDATA[METHOD PUBLIC M_CmdStartupPath : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	PathID 		:UINT;
+	CRC		:UINT;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	stToServer.StartBytes := HOST_TO_BE16(16#ABBA);
+	stToServer.MsgLength  := MM_CONST.B2_CMD_LEN;	
+	stToServer.DataArray[0] := 16#B2;	
+	PathID		:= HOST_TO_BE16(0);		
+	memcpy(ADR(stToServer.DataArray[1]), ADR(PathID),SIZEOF(UINT));    
+	CRC := HOST_TO_BE16(F_DATA_TO_CRC16_CCITT(ADR(stToServer),MM_CONST.B8_CMD_LEN+MM_CONST.CRC_CALC_LEN_ADJUST,16#FFFF));
+	memcpy(ADR(stToServer.DataArray[3]), ADR(CRC),SIZEOF(UINT));
+	fbTx.AddTail( stPut := stToServer );(* Put user data to the tx fifo *)
+	IF NOT fbTx.bOk THEN(* Fifo overflow => Log error *)
+		fbLog.Error( sMessage := 'FB_FrameFifo(sender)', nErrID := MM_CONST.PLCPRJ_ERROR_SENDFIFO_OVERFLOW );
+	END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CmdSuspendMov" Id="{cb07c546-c508-42f3-a5b0-6821202099a8}">
+      <Declaration><![CDATA[METHOD PUBLIC M_CmdSuspendMov : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	PathID 		:UINT;
+	CRC		:UINT;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	stToServer.StartBytes := HOST_TO_BE16(16#ABBA);
+	stToServer.MsgLength  := MM_CONST.B2_CMD_LEN;	
+	stToServer.DataArray[0] := 16#B4;	
+	PathID		:= HOST_TO_BE16(0);		
+	memcpy(ADR(stToServer.DataArray[1]), ADR(PathID),SIZEOF(UINT));    
+	CRC := HOST_TO_BE16(F_DATA_TO_CRC16_CCITT(ADR(stToServer),MM_CONST.B8_CMD_LEN+MM_CONST.CRC_CALC_LEN_ADJUST,16#FFFF));
+	memcpy(ADR(stToServer.DataArray[3]), ADR(CRC),SIZEOF(UINT));
+	fbTx.AddTail( stPut := stToServer );(* Put user data to the tx fifo *)
+	IF NOT fbTx.bOk THEN(* Fifo overflow => Log error *)
+		fbLog.Error( sMessage := 'FB_FrameFifo(sender)', nErrID := MM_CONST.PLCPRJ_ERROR_SENDFIFO_OVERFLOW );
+	END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CmdVehicleStatus" Id="{bad7b19d-8e3a-4efb-877d-93d8eecda02e}">
+      <Declaration><![CDATA[(* Request Status for all Vehicles. This command will be called periodically by Monitoring loop *)
+METHOD PUBLIC M_CmdVehicleStatus : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	ID 		:UINT;
+	CRC		:UINT;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(* Request Status for Vehicle *)
+	stToServer.StartBytes := HOST_TO_BE16(16#ABBA);
+	stToServer.MsgLength  := MM_CONST.B5_CMD_LEN;
+	stToServer.DataArray[0] := 16#B5;	
+	stToServer.DataArray[1] := MM_CONST.STATUS_REQ_TYPE_Vehicle;
+	ID := HOST_TO_BE16(16#0); (* can be omitted, but kept here for msg length*)	
+	memcpy(ADR(stToServer.DataArray[2]), ADR(ID),SIZEOF(UINT));
+    stToServer.DataArray[4]	:= 16#0; (* can be omitted, but kept here for msg length*)
+	CRC := HOST_TO_BE16(F_DATA_TO_CRC16_CCITT(ADR(stToServer),MM_CONST.B5_CMD_LEN+MM_CONST.CRC_CALC_LEN_ADJUST,16#FFFF));
+	memcpy(ADR(stToServer.DataArray[5]), ADR(CRC),SIZEOF(UINT));
+ 	fbTx.AddTail( stPut := stToServer );(* Put user data to the tx fifo *)
+	IF NOT fbTx.bOk THEN(* Fifo overflow => Log error *)
+		fbLog.Error( sMessage := 'FB_FrameFifo(sender)', nErrID := MM_CONST.PLCPRJ_ERROR_SENDFIFO_OVERFLOW );
+	END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CmdVehToPos" Id="{90b6ee6a-e3d5-4355-9f7c-43117b604c59}">
+      <Declaration><![CDATA[(* Add command to move vehicle to a position to the TxFifo with formatted expected by MM HLC*)
+METHOD PUBLIC M_CmdVehToPos : BOOL
+VAR_INPUT
+	VehicleID 	: 	UINT;
+	Flags 		: 	BYTE;
+	Pos 		:	REAL;
+	Acc			:	REAL;
+	Vel			:	REAL;
+END_VAR
+VAR
+	PathID 				:UINT;
+	CRC					:UINT;
+	OrderNumberLocal 	:UDINT;
+	VehicleIDLocal		:UINT;	
+    ConvertedDWord		:DWORD;
+	FollowID			:UINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stToServer.StartBytes := HOST_TO_BE16(16#ABBA);
+	stToServer.MsgLength  := MM_CONST.B1_CMD_LEN;	
+	stToServer.DataArray[0] := 16#B1;
+    IF (udiOrderNumb < 10000) THEN
+		udiOrderNumb := udiOrderNumb+1;
+	ELSE
+        udiOrderNumb := 1;  			
+	END_IF	
+	OrderNumberLocal := HOST_TO_BE32(udiOrderNumb); //Local Copy
+	memcpy(ADR(stToServer.DataArray[1]),ADR(OrderNumberLocal),SIZEOF(UDINT));
+	VehicleIDLocal := HOST_TO_BE16(VehicleID);
+	memcpy(ADR(stToServer.DataArray[5]),ADR(VehicleIDLocal),SIZEOF(UINT));
+	memcpy(ADR(stToServer.DataArray[7]),ADR(Flags),SIZEOF(BYTE));
+	
+	memcpy(ADR(ConvertedDWord),ADR(Pos),SIZEOF(DWORD));
+	
+	memcpy(ADR(stToServer.DataArray[8]),ADR(ConvertedDWord),SIZEOF(DWORD));
+	
+	PathID		:= HOST_TO_BE16(1);		
+	memcpy(ADR(stToServer.DataArray[12]), ADR(PathID),SIZEOF(UINT));
+
+	memcpy(ADR(ConvertedDWord),ADR(Acc),SIZEOF(DWORD));
+	
+	memcpy(ADR(stToServer.DataArray[14]),ADR(ConvertedDWord),SIZEOF(DWORD));
+	
+	memcpy(ADR(ConvertedDWord),ADR(Vel),SIZEOF(DWORD));
+	
+	memcpy(ADR(stToServer.DataArray[18]),ADR(ConvertedDWord),SIZEOF(DWORD));
+	
+	FollowID := HOST_TO_BE16(0);
+	memcpy(ADR(stToServer.DataArray[22]),ADR(FollowID),SIZEOF(DWORD));
+	CRC := HOST_TO_BE16(F_DATA_TO_CRC16_CCITT(ADR(stToServer),MM_CONST.B1_CMD_LEN+MM_CONST.CRC_CALC_LEN_ADJUST,16#FFFF));
+	memcpy(ADR(stToServer.DataArray[24]), ADR(CRC),SIZEOF(UINT));
+	fbTx.AddTail( stPut := stToServer );(* Put user data to the tx fifo *)
+	IF NOT fbTx.bOk THEN(* Fifo overflow => Log error *)
+		fbLog.Error( sMessage := 'FB_FrameFifo(sender)', nErrID := MM_CONST.PLCPRJ_ERROR_SENDFIFO_OVERFLOW );
+	END_IF
+	]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="MM_MsgFormatter">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgFormatter.M_CmdHLCStatus">
+      <LineId Id="9" Count="12" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgFormatter.M_CmdResetPath">
+      <LineId Id="9" Count="10" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgFormatter.M_CmdResumeMov">
+      <LineId Id="9" Count="9" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgFormatter.M_CmdStartupPath">
+      <LineId Id="9" Count="9" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgFormatter.M_CmdSuspendMov">
+      <LineId Id="9" Count="9" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgFormatter.M_CmdVehicleStatus">
+      <LineId Id="6" Count="12" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgFormatter.M_CmdVehToPos">
+      <LineId Id="21" Count="36" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

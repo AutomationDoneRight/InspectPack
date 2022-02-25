@@ -1,0 +1,299 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="MM_MsgParser" Id="{445a24ed-63b2-444c-8611-4c39dc7a88a5}" SpecialFunc="None">
+    <Declaration><![CDATA[(* Implements the Magnemotion TCP/IP Protocol and adds to TxFifo*)
+FUNCTION_BLOCK PUBLIC MM_MsgParser
+VAR_IN_OUT
+	fbRx : FB_Rx_FrameFifo;
+	fbLog	:	FB_LogFifo;	
+END_VAR
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	stFromServer	: ST_MM_RxFrame; (* Rx user data *)
+	sLogMessage 	: T_MaxString := '';(* Log/debug/error message *)
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*------------------------ Fetch rx data -------------------------------------- *)
+REPEAT
+	fbRx.RemoveHead( );(* fetch data from rx fifo *)
+	IF fbRx.bOk THEN(* success *)
+
+		(* TODO: Implement receive handler *)
+		stFromServer := fbRx.stGet; 
+		M_ResHLCMsg();
+
+	END_IF
+UNTIL NOT fbRx.bOk
+END_REPEAT
+
+(*---------------------- Get log/error messages from log fifo ------------------*)
+REPEAT
+	fbLog.Remove( );
+	IF fbLog.bOk THEN
+
+		(* TODO: Implement log message handler *)
+		sLogMessage := fbLog.sGet;
+
+	END_IF
+UNTIL NOT fbLog.bOk
+END_REPEAT]]></ST>
+    </Implementation>
+    <Method Name="M_ResD0_B1Cmd" Id="{5dab6638-cfeb-4197-93e8-ed7ba334ead4}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ResD0_B1Cmd : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	LocalOrderNumb :DWORD;
+	LocalOrderNumbBE: DWORD;
+	LocalVehicleID : UINT;
+	LocalVehicleIDBE: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[memcpy(ADR(LocalOrderNumbBE),ADR(stFromServer.Resdata.DataArray[2]),SIZEOF(DWORD));
+LocalOrderNumb := BE32_TO_HOST(LocalOrderNumbBE);
+memcpy(ADR(LocalVehicleIDBE),ADR(stFromServer.Resdata.DataArray[6]),SIZEOF(UINT));
+LocalVehicleID := BE16_TO_HOST(LocalVehicleIDBE);
+IF (stFromServer.Resdata.ResCmdData.D0Res.CmdStatus = 16#00) THEN			
+ 	Stations.fbVehicleManager[LocalVehicleID].MoveCmdAccepted := TRUE; 
+	ELSIF (stFromServer.Resdata.ResCmdData.D0Res.CmdStatus = 16#80) THEN 
+		Stations.fbVehicleManager[LocalVehicleID].MoveCmdCmpl := TRUE; 
+	ELSE			
+		//Stations.VehicleManager[LocalVehicleID].VehMovePosState := eMM_VehMoveToPosCmdStatus.eMM_VehMoveToPosCmdRejected;
+	END_IF	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ResD0_B2Cmd" Id="{6b6a9b9f-72af-499d-91a5-607cb85a332f}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ResD0_B2Cmd : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (stFromServer.Resdata.ResCmdData.D0Res.CmdStatus = 16#00) THEN
+	Stations.fbPrimeMover.StartupCmdState := eMM_StartupCmdStatus.eMM_StartupCmdAck;
+ELSIF (stFromServer.Resdata.ResCmdData.D0Res.CmdStatus = 16#80) THEN
+	Stations.fbPrimeMover.StartupCmdState := eMM_StartupCmdStatus.eMM_StartupCmdComplete;		
+ELSE
+	Stations.fbPrimeMover.StartupCmdState := eMM_StartupCmdStatus.eMM_StartupCmdRejected;
+END_IF	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ResD0_B8Cmd" Id="{340629ba-af7f-414b-a596-ade32c85423a}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ResD0_B8Cmd : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (stFromServer.Resdata.ResCmdData.D0Res.CmdStatus = 16#00) THEN
+	Stations.fbPrimeMover.ResetCmdState := eMM_ResetCmdStatus.eMM_ResetCmdAck;
+ELSIF (stFromServer.Resdata.ResCmdData.D0Res.CmdStatus = 16#80) THEN
+	Stations.fbPrimeMover.ResetCmdState := eMM_ResetCmdStatus.eMM_ResetCmdComplete;
+ELSE
+	Stations.fbPrimeMover.ResetCmdState := eMM_ResetCmdStatus.eMM_ResetCmdRejected;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ResD1_HLCStatus" Id="{16d37293-4e2e-459d-b6c4-1406f4e2466b}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ResD1_HLCStatus : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE stFromServer.Resdata.ResCmdData.D1Res.HLC_State OF
+			MM_CONST.HLC_STATE_INIT:		
+				Stations.fbPrimeMover.HLCState := eMM_HLCStatus.eHLC_STATE_INIT;	
+			MM_CONST.HLC_STATE_DEGRADED:
+                Stations.fbPrimeMover.HLCState := eMM_HLCStatus.eHLC_STATE_DEGRADED;			
+		    MM_CONST.HLC_STATE_OPERATIONAL:
+				Stations.fbPrimeMover.HLCState := eMM_HLCStatus.eHLC_STATE_OPERATIONAL;
+			ELSE
+				Stations.fbPrimeMover.HLCState := eMM_HLCStatus.eHLC_STATE_DEGRADED;						
+		END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ResD5_VehStatus" Id="{e18e8562-8813-49e7-ac0f-aec35488d5ec}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ResD5_VehStatus : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	LocalOrderNumb :DWORD;
+	LocalOrderNumbBE: DWORD;
+	LocalVehicleID : UINT;
+	LocalVehicleIDBE: UINT;
+	LocalPathIDBE: UINT;
+	LocalPathID :UINT;
+	LocalDestPathIDBE: UINT;
+	LocalDestPathID :UINT;
+	LocalVehPos: REAL;
+	LocalVehVel:REAL;
+	LocalVehCmdPos :REAL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//VehicleID
+memcpy(ADR(LocalVehicleIDBE),ADR(stFromServer.Resdata.DataArray[0]),SIZEOF(UINT));
+LocalVehicleID := BE16_TO_HOST(LocalVehicleIDBE);
+Status.MMVehiclesStatus[LocalVehicleID].VehicleID := LocalVehicleID; 
+
+//Vehicle Present
+Status.MMVehiclesStatus[LocalVehicleID].VehiclePresent := stFromServer.Resdata.DataArray[2]; 
+
+//Path ID
+memcpy(ADR(LocalPathIDBE),ADR(stFromServer.Resdata.DataArray[3]),SIZEOF(UINT));
+LocalPathID := BE16_TO_HOST(LocalPathIDBE);
+Status.MMVehiclesStatus[LocalVehicleID].PathID := LocalPathID; 
+
+//DestinationPathID
+memcpy(ADR(LocalDestPathIDBE),ADR(stFromServer.Resdata.DataArray[5]),SIZEOF(UINT));
+LocalDestPathID := BE16_TO_HOST(LocalDestPathIDBE);
+Status.MMVehiclesStatus[LocalVehicleID].DestinationPathID := LocalDestPathID; 
+
+//VehiclePos
+memcpy(ADR(LocalVehPos),ADR(stFromServer.Resdata.DataArray[7]),SIZEOF(DWORD));
+Status.MMVehiclesStatus[LocalVehicleID].VehiclePos := LocalVehPos; 
+
+//VehicleVel
+memcpy(ADR(LocalVehVel),ADR(stFromServer.Resdata.DataArray[11]),SIZEOF(DWORD));
+Status.MMVehiclesStatus[LocalVehicleID].Velocity := LocalVehVel; 
+
+//VehicleCmdType
+Status.MMVehiclesStatus[LocalVehicleID].VehicleCmdType := stFromServer.Resdata.DataArray[15]; 
+
+//Vehicle Flags
+Status.MMVehiclesStatus[LocalVehicleID].VehicleFlags := stFromServer.Resdata.DataArray[16]; 
+
+// VehicleCmdPos
+memcpy(ADR(LocalVehCmdPos),ADR(stFromServer.Resdata.DataArray[17]),SIZEOF(DWORD));
+Status.MMVehiclesStatus[LocalVehicleID].VehicleCmdPos := LocalVehCmdPos; 
+
+(* Copy Status into Byte Array for ADS Communication with HMI *) 
+  
+  (****************************************
+	VehicleID			:	UINT; // 2 bytes
+	VehiclePresent		:	BYTE; // 1 byte 
+	PathID				:	UINT; // 2 bytes 
+	DestinationPathID	:	UINT; // 2 bytes
+	VehiclePos			: 	REAL; // 4 bytes
+	Velocity			: 	REAL; // 4 bytes 
+	VehicleCmdType		: 	BYTE; // 1 byte
+	VehicleFlags		: 	BYTE; // 1 byte
+	VehicleCmdPos		: 	REAL; // 4 bytes
+	*****************************************)
+(*
+memset(ADR(Status.MMVehiclesStatusHMI[LocalVehicleID].VehicleStatusBytes), 0, SIZEOF (ST_VehicleStatusHMI.VehicleStatusBytes));
+memcpy(ADR(Status.MMVehiclesStatusHMI[LocalVehicleID].VehicleStatusBytes[0]),ADR(LocalVehicleID),SIZEOF(UINT));
+memcpy(ADR(Status.MMVehiclesStatusHMI[LocalVehicleID].VehicleStatusBytes[2]),ADR(Status.MMVehiclesStatus[LocalVehicleID].VehiclePresent),SIZEOF(BYTE));
+memcpy(ADR(Status.MMVehiclesStatusHMI[LocalVehicleID].VehicleStatusBytes[3]),ADR(LocalPathID),SIZEOF(UINT));	
+memcpy(ADR(Status.MMVehiclesStatusHMI[LocalVehicleID].VehicleStatusBytes[5]),ADR(LocalDestPathID),SIZEOF(UINT));
+memcpy(ADR(Status.MMVehiclesStatusHMI[LocalVehicleID].VehicleStatusBytes[7]),ADR(LocalVehPos),SIZEOF(REAL));
+memcpy(ADR(Status.MMVehiclesStatusHMI[LocalVehicleID].VehicleStatusBytes[11]),ADR(LocalVehVel),SIZEOF(REAL));
+memcpy(ADR(Status.MMVehiclesStatusHMI[LocalVehicleID].VehicleStatusBytes[15]),ADR(Status.MMVehiclesStatus[LocalVehicleID].VehicleCmdType),SIZEOF(BYTE));
+memcpy(ADR(Status.MMVehiclesStatusHMI[LocalVehicleID].VehicleStatusBytes[16]),ADR(Status.MMVehiclesStatus[LocalVehicleID].VehicleFlags),SIZEOF(BYTE));
+memcpy(ADR(Status.MMVehiclesStatusHMI[LocalVehicleID].VehicleStatusBytes[17]),ADR(LocalVehCmdPos),SIZEOF(DWORD));
+*)
+(* End Copy for HMI ADS Communication*)]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ResHLCMsg" Id="{c6acb4e1-67f9-42ed-a19c-fdf8623815e2}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ResHLCMsg : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE (stFromServer.ResHeader) OF
+16#D0:	
+	CASE (stFromServer.Resdata.ResCmdData.D0Res.Cmd) OF
+		16#B1:
+			M_ResD0_B1Cmd();
+		16#B2:
+		    M_ResD0_B2Cmd();
+		16#B3:
+		16#B4:
+		16#B5:
+		16#B8:
+		     M_ResD0_B8Cmd();			
+	END_CASE
+16#D1:
+		M_ResD1_HLCStatus();
+16#D2:
+16#D3:
+16#D4:
+16#D5:
+      M_ResD5_VehStatus();
+16#D7:
+ELSE	
+//	Reset();
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="MM_MsgParser">
+      <LineId Id="17" Count="22" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgParser.M_ResD0_B1Cmd">
+      <LineId Id="11" Count="5" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="19" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgParser.M_ResD0_B2Cmd">
+      <LineId Id="12" Count="4" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgParser.M_ResD0_B8Cmd">
+      <LineId Id="12" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgParser.M_ResD1_HLCStatus">
+      <LineId Id="6" Count="8" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgParser.M_ResD5_VehStatus">
+      <LineId Id="6" Count="3" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="10" Count="1" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="12" Count="3" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="16" Count="3" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="20" Count="2" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="23" Count="2" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="26" Count="1" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="28" Count="1" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="52" Count="1" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="58" Count="9" />
+      <LineId Id="54" Count="2" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="70" Count="7" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="MM_MsgParser.M_ResHLCMsg">
+      <LineId Id="6" Count="3" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="18" Count="3" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="29" Count="2" />
+      <LineId Id="41" Count="8" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ePistonInsertStaState" Id="{b0cfc154-64a1-42b5-ba21-9640400924c3}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE ePistonInsertStaState :
+( 
+	eUnknown :=601 ,
+	eInit,
+	eHoming,
+	eSMCMtrReset,
+	eSMCMtrCheckEnabled,
+	eSMCMtrSendHome,
+	eSMCMtrHomed,
+	eCheckToolPosition,
+	eDisabledReady,
+	eReady,
+	ePalletHoldDownEngaged,
+	eMoveEscapemttoBowl,
+	eEscapmentAtBowl,
+	eWaitForPartAtBowl,
+	eMoveEscapmentToWork,
+	eEscapementAtWork,
+	eFirePistonUp,
+	eSendBarrelBackupEngage,
+	eWaitForPistonStartMovUp,
+	eWaitForBarrelBackupEngaged,
+	eWaitForPistonMovDoneUp,
+	eFirePistonDown,
+	eRetractPalletHoldDownAndBackup,
+	eWaitForPistonStartMovDwn,
+	eRetractPalletHoldDownAndBarrel,
+	eWaitForPalletHoldDownAndBackupRetracted,
+	eWaitForPistonMovDoneDown,	
+	eDepart,
+	eStopActive,
+	eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_MM_TxFrame" Id="{3116615e-9f7a-42e5-8a84-08dd5b2d4ba7}">
+    <Declaration><![CDATA[TYPE ST_MM_TxFrame :
+STRUCT
+	//head 	:ST_MM_Header;
+    StartBytes	:WORD :=16#ABBA;
+	MsgLength	:BYTE :=0;
+	DataArray	:ARRAY[0..31] OF BYTE;
+	//Cmd_Header	:BYTE ;	
+	//Cmddata :U_MM_CmdData;
+		
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

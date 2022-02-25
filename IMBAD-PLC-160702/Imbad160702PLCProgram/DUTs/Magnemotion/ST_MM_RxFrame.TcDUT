@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_MM_RxFrame" Id="{bb67d521-975e-45d4-bab3-c8def2ab5276}">
+    <Declaration><![CDATA[TYPE ST_MM_RxFrame :
+STRUCT
+	//head 	:ST_MM_Header;	
+	StartBytes	:WORD 	:=16#ABBA;
+	MsgLength	:BYTE 	:=0;
+	ResHeader   :BYTE	:=0;	
+	Resdata :U_MM_ResData;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

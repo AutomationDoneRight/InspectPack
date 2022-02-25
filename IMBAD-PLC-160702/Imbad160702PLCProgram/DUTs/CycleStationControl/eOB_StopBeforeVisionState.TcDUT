@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eOB_StopBeforeVisionState" Id="{95274ef1-8b64-4c31-923f-dd9c11cf0c65}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eOB_StopBeforeVisionState :
+( 
+	eUnknown,
+    eInit,
+	eHoming,
+	eReady,
+	eDwell,
+	eProcessing,
+	eDepart,
+	eStopActive,
+    eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

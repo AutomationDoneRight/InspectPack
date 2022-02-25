@@ -1,0 +1,174 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="OB_StopBeforeVisionStation" Id="{5cb07ee7-8d9e-4d49-bedd-4859912012a9}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC OB_StopBeforeVisionStation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : eOB_StopBeforeVisionState := eOB_StopBeforeVisionState.eUnknown;
+	NextState : eOB_StopBeforeVisionState := eOB_StopBeforeVisionState.eUnknown;
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[CASE State OF
+
+eOB_StopBeforeVisionState.eUnknown:
+	NextState := eOB_StopBeforeVisionState.eReady;
+
+eOB_StopBeforeVisionState.eInit:
+
+eOB_StopBeforeVisionState.eHoming:
+
+eOB_StopBeforeVisionState.eReady:
+	IF (xTrigger) THEN
+		NextState := eOB_StopBeforeVisionState.eDwell;		
+		DwellTimer(IN:=FALSE);
+	END_IF
+
+eOB_StopBeforeVisionState.eDwell:
+	DwellTimer(IN:=TRUE, PT := T#600MS);
+	IF (GVL_IO.VS_XPartPresentBeforeVision) THEN 
+		PartsData.Status[VUT].OverallStatus := ePartStatus.eLoaded;
+        NextState := eOB_StopBeforeVisionState.eProcessing;		
+		DwellTimer(IN:=FALSE);
+	END_IF
+	IF (DwellTimer.Q) THEN // just call it loaded, no sensor is present 
+		NextState := eOB_StopBeforeVisionState.eProcessing;		
+		PartsData.Status[VUT].OverallStatus := ePartStatus.eLoaded;
+		DwellTimer(IN:=FALSE);
+	END_IF
+
+eOB_StopBeforeVisionState.eProcessing:
+	IF (NOT Stations.fbVisionSta.InspectionOnGoing) THEN
+		NextState := eOB_StopBeforeVisionState.eDepart;
+	END_IF
+
+eOB_StopBeforeVisionState.eDepart:
+	    UpdatePartData();
+		Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.STOP_BEFORE_VISION_STA, VehicleID := VUT);
+		xTrigger := FALSE;
+		NextState := eOB_StopBeforeVisionState.eReady;
+
+eOB_StopBeforeVisionState.eError:
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;]]></ST>
+    </Implementation>
+    <Method Name="ClearVehicleTrigger" Id="{2e1c596d-5d2b-4639-b99e-5f6e5ea3a76c}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Trigger" Id="{ee49aa6e-a684-4efa-b494-49869a69f2a3}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{b26aa3a0-8028-4325-bea7-afd6d08367c3}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="UpdatePartData" Id="{2d06d4a0-4e96-434d-96a9-4783573025fb}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdatePartData : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[PartsData.Status[VUT].BurnOffTemp := GVL_IO.BU_Temperature/10; 
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="VehicleUnderTest" Id="{267ec9f2-69c2-425c-8b48-3a21d0dfa33f}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{7bda8d34-9c37-4a52-87e5-0d6623766a7c}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{9ff98e18-9a4c-4722-af08-4027456e344c}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="OB_StopBeforeVisionStation">
+      <LineId Id="11" Count="0" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="43" Count="1" />
+      <LineId Id="46" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="119" Count="1" />
+      <LineId Id="126" Count="1" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="49" Count="1" />
+      <LineId Id="125" Count="0" />
+      <LineId Id="51" Count="1" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="81" Count="2" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="104" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="12" Count="8" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="OB_StopBeforeVisionStation.ClearVehicleTrigger">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="OB_StopBeforeVisionStation.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="OB_StopBeforeVisionStation.UpdatePartData">
+      <LineId Id="10" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="OB_StopBeforeVisionStation.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="OB_StopBeforeVisionStation.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

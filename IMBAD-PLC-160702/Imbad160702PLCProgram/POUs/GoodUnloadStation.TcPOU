@@ -1,0 +1,1550 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="GoodUnloadStation" Id="{ac241c74-a79f-4852-ac9d-324ad9189b77}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC GoodUnloadStation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : eGoodULStaState := eGoodULStaState.eUnknown;
+	NextState : eGoodULStaState := eGoodULStaState.eUnknown;	
+	ErrorReturnState : eGoodULStaState := eGoodULStaState.eUnknown;	
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;
+	StateTimer : TON;
+	eDwell: INT;
+	eDepart: INT;
+	CurrPPLoc : BYTE;
+	GripperOpenTimer :TIME := T#200MS;
+	//StopAfter
+	DropLocation : BYTE;
+	GoodFullCount : UINT := 0;
+	PremiumFullCount : UINT := 0;
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (GVL_IO.MachineEStopped) THEN 
+	State := eGoodULStaState.eUnknown;
+	NextState := eGoodULStaState.eUnknown;	
+	Status.GoodULStatusMsg:= 'Unload: Unknown State, Check E-STOP, Check Air, Hit Start';
+END_IF
+
+GetPPLocation(Location=>CurrPPLoc); // Get where PP Location is from the Bits. 
+
+IF (NOT LotsData.Lot.AutoBaggerEnabled) THEN
+	Config.PremiumCount1 := 0;
+	Config.PremiumCount2 := 0;
+	Config.GoodCount1 := 0;
+	Config.GoodCount2 := 0;
+	GoodFullCount := 0;
+    PremiumFullCount := 0;
+END_IF
+
+
+CASE State OF
+	
+eGoodULStaState.eUnknown:
+	IF (GVL_IO.MC_XStartPB AND GVL_IO.MC_XAirPressureOK AND GVL_IO.MC_NotEStopped) THEN // wait for start button when powered up or PLC program restarted
+			NextState := eGoodULStaState.eInit;	   
+	END_IF
+
+eGoodULStaState.eInit:
+    Act_OpenGrippers();
+	Act_FreePalletHold();
+	Act_FreePalletRelease();
+    Act_MoveRotatorCenter();
+	Act_ResetPPIO();	
+	
+	StateTimer(IN:=TRUE,PT:= T#100MS);
+	IF (StateTimer.Q) THEN
+		NextState := eGoodULStaState.eHoming;
+		ResetStateTimer();
+	END_IF	
+
+eGoodULStaState.eHoming:
+  
+	IF (IsGripperOpen() AND IsPalletReleaseFree() AND IsRotatorCenter() AND IsPalletHoldDownFree()) THEN
+	  NextState := eGoodULStaState.eHPReset;
+	  ResetDwellTimer();
+ 	END_IF	
+	
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eInit;		
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := eGoodULStaState.eError;		
+	END_IF
+	
+
+eGoodULStaState.eHPReset:
+	IF (GVL_IO.UL_XPP_Alarm) THEN
+		DwellTimer(IN:= TRUE, PT := T#2S);	
+	END_IF
+	IF (DwellTimer.Q) THEN
+		ResetDwellTimer();
+		GVL_IO.UL_YPP_ResetAlarm := NOT GVL_IO.UL_YPP_ResetAlarm; // toggle the reset request every four seconds 
+	END_IF
+	IF (NOT GVL_IO.UL_XPP_Alarm) THEN
+		GVL_IO.UL_YPP_Enable:= TRUE;
+		GVL_IO.UL_YPP_ResetAlarm := FALSE;
+		ResetDwellTimer();
+		NextState := eGoodULStaState.eHPCheckEnabled;	
+	END_IF
+	// Time out condition... hang here until Pick Place Alarm is reset... 
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPReset;		
+		ResetDwellTimer();
+		ResetStateTimer();
+		Status.GoodULStatusMsg:= 'Pick&Place unable to Reset';
+        NextState := eGoodULStaState.eError;		
+	END_IF
+
+eGoodULStaState.eHPCheckEnabled:
+	IF (GVL_IO.UL_XPP_DriveEnabled AND NOT GVL_IO.UL_XPP_Alarm) THEN
+		ResetDwellTimer();
+        IF (GVL_IO.UL_XPP_ReferenceOK) THEN
+			NextState := eGoodULStaState.eHPHomed;			
+			GVL_IO.UL_YPP_StartHoming := FALSE;
+		ELSE			
+			NextState := eGoodULStaState.eHPSendHome;
+		END_IF
+	END_IF
+	
+	// Time out condition... hang here until Pick Place Alarm is reset... 
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPReset;		
+		ResetDwellTimer();
+		ResetStateTimer();
+		Status.GoodULStatusMsg:= 'Pick&Place unable to Enable';
+        NextState := eGoodULStaState.eError;		
+	END_IF
+
+eGoodULStaState.eHPSendHome:
+	GVL_IO.UL_YPP_Stop := FALSE;
+	IF (NOT GVL_IO.UL_XPP_StopActive AND GVL_IO.UL_XPP_ReadyToStart AND GVL_IO.UL_XPP_DriveEnabled AND NOT GVL_IO.UL_XPP_Alarm) THEN
+		GVL_IO.UL_YPP_StartHoming := TRUE;
+	END_IF
+	
+   IF (GVL_IO.UL_XPP_ReferenceOK) THEN
+	   NextState := eGoodULStaState.eHPHomed;
+	   ResetDwellTimer();
+   END_IF
+   
+   DwellTimer(IN:=TRUE, PT:= T#2M);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eInit;		
+		ResetDwellTimer();
+		ResetStateTimer();
+		GVL_IO.UL_YPP_StartHoming := FALSE;
+		Status.GoodULStatusMsg:= 'Pick&Place unable to Home';
+        NextState := eGoodULStaState.eError;		
+	END_IF
+ 
+
+eGoodULStaState.eHPHomed:
+	GVL_IO.UL_YPP_Stop := FALSE;
+	GVL_IO.UL_YPP_Enable := TRUE;
+	GVL_IO.UL_YPP_StartHoming := FALSE;
+	IF (GVL_IO.UL_XPP_ReadyToStart) THEN
+		NextState := eGoodULStaState.eHPSendToInitLoc;
+		ResetDwellTimer();
+		ResetStateTimer();
+	END_IF
+	
+    DwellTimer(IN:=TRUE, PT:= T#2M);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPReset;		
+		ResetDwellTimer();
+		ResetStateTimer();
+		GVL_IO.UL_YPP_StartHoming := FALSE;
+		Status.GoodULStatusMsg:= 'Pick&Place unable to Ready To Start';
+        NextState := eGoodULStaState.eError;		
+	END_IF
+
+eGoodULStaState.eHPSendToInitLoc:
+   // we have to set Seq 1 as InitLoc ( Up at Pick Location). Also, Input bits will corresponding to the sequence 
+   SetPPSequence(SequenceNumb := 1);
+   DwellTimer(IN:= TRUE, PT:= T#30MS);
+   IF (DwellTimer.Q) THEN
+	   GVL_IO.UL_YPP_StartSeq := TRUE;
+	   ResetDwellTimer();
+   END_IF
+   StateTimer(IN:= GVL_IO.UL_YPP_StartSeq, PT:= T#30MS);
+   IF (StateTimer.Q) THEN
+	   NextState := eGoodULStaState.eHPAtInitLoc;
+	   ResetStateTimer();
+	   ResetDwellTimer();
+   END_IF
+ 
+eGoodULStaState.eHPAtInitLoc:
+	IF (CurrPPLoc = 1) THEN
+		NextState:= eGoodULStaState.eHPReady;
+		GVL_IO.UL_YPP_StartSeq := FALSE;
+		ResetDwellTimer();
+		ResetStateTimer();
+	END_IF
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPSendToInitLoc;		
+		ResetDwellTimer();
+		ResetStateTimer();
+		GVL_IO.UL_YPP_StartSeq := FALSE;
+		Status.GoodULStatusMsg:= 'Pick&Place unable to Go To Init Loc';
+        NextState := eGoodULStaState.eError;		
+	END_IF
+
+eGoodULStaState.eHPReady:
+    Status.GoodULStatusMsg:= 'Unload Ready';
+    Act_OpenGrippers();
+	Act_FreePalletHold();
+    Act_FreePalletRelease();
+    Act_MoveRotatorCenter();	
+	//PP fieldbus commands
+	SetPPSequence(SequenceNumb := 1);
+	Act_EnablePP();
+	GVL_IO.UL_YPP_StartSeq := FALSE;
+	
+	 IF (IsGripperOpen() AND IsPalletReleaseFree() AND IsRotatorCenter() AND IsPalletHoldDownFree() AND GVL_IO.UL_XPP_ReadyToStart ) THEN
+	  	 ResetDwellTimer();
+         IF (LotsData.Lot.GoodUnloadEnabled) THEN
+			 NextState:= eGoodULStaState.eWaitForVehicleTrigger;			 
+		 ELSE 
+			 NextState := eGoodULStaState.eDisabledReady;
+		 END_IF    
+    END_IF	
+	
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPReady;		
+		ResetDwellTimer();
+		ResetStateTimer();				
+        NextState := eGoodULStaState.eError;		
+	END_IF
+	
+	
+
+eGoodULStaState.eDisabledReady:
+	
+	IF (LotsData.Lot.GoodUnloadEnabled) THEN
+		NextState := eGoodULStaState.eUnknown;
+	END_IF
+	IF (xTrigger) THEN
+		Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.GOOD_UNLOAD_STA, VehicleID := VUT);
+		xTrigger := FALSE;
+		NextState := eGoodULStaState.eDepartVehicle;
+	END_IF
+
+eGoodULStaState.eWaitForVehicleTrigger:
+
+	IF (xTrigger) THEN //XTrigger is signaled when part arrives under the station
+		DwellTimer(IN:=TRUE, PT:= T#100MS);
+        IF (DwellTimer.Q) THEN 
+			NextState := eGoodULStaState.eDetermineDropLocation;
+			ResetDwellTimer();
+        END_IF								
+	END_IF
+	
+	IF (NOT LotsData.Lot.GoodUnloadEnabled) THEN
+		NextState := eGoodULStaState.eDisabledReady;
+	END_IF
+	
+	Status.GoodULStatusMsg:= 'Unload Ready: Waiting For Vehicle';
+		 
+eGoodULStaState.eDetermineDropLocation: //Determine drop locations.  Premiums can go in good if Premium is full.  
+
+	IF (PartsData.Status[VUT].Premium) THEN
+		IF (NOT LotsData.Lot.AutoBaggerEnabled) THEN
+			DropLocation := 1;
+			NextState := eGoodULStaState.eDwell;
+		ELSIF ((Config.PremiumCount1 < LotsData.Lot.QuantityInBag) AND ((Config.PremiumCount2 < (LotsData.Lot.QuantityInBag-10)) OR (Config.PremiumCount2 = LotsData.Lot.QuantityInBag))) THEN
+			DropLocation := 1;
+			NextState := eGoodULStaState.eDwell;
+			PremiumFullCount := 0;
+		ELSIF (Config.PremiumCount2 < LotsData.Lot.QuantityInBag) THEN
+			DropLocation := 2;
+			NextState := eGoodULStaState.eDwell;
+			PremiumFullCount := 0;
+		ELSE
+			PartsData.Status[VUT].Premium := FALSE;
+			PartsData.Status[VUT].Good := TRUE;
+			PremiumFullCount := PremiumFullCount + 1;
+		END_IF
+	END_IF
+	
+	IF (PartsData.Status[VUT].Good) THEN      /// remove this after Turnkey Debug
+		IF (NOT LotsData.Lot.AutoBaggerEnabled) THEN
+			DropLocation := 3;
+			NextState := eGoodULStaState.eDwell;
+		ELSIF ((Config.GoodCount1 < LotsData.Lot.QuantityInBag) AND ((Config.GoodCount2 < (LotsData.Lot.QuantityInBag-10)) OR (Config.GoodCount2 = LotsData.Lot.QuantityInBag))) THEN
+			DropLocation := 3;
+			NextState := eGoodULStaState.eDwell;
+			GoodFullCount := 0;
+		ELSIF (NOT (Config.GoodCount2 >= LotsData.Lot.QuantityInBag)) THEN
+			DropLocation := 4;
+			NextState := eGoodULStaState.eDwell;
+			GoodFullCount := 0;
+		ELSE
+			PartsData.Status[VUT].Premium := FALSE;
+			PartsData.Status[VUT].Good := FALSE;
+			PartsData.Status[VUT].OverallStatus := ePartStatus.eReject;
+			PartsData.Status[VUT].GoodUnload := FALSE;
+			GoodFullCount := GoodFullCount + 1;
+		END_IF	
+	END_IF
+    	
+	IF (PartsData.Status[VUT].OverallStatus = ePartStatus.eReject) THEN
+		NextState := eGoodULStaState.eAbandonCycle;
+	END_IF	
+	
+	IF (GoodFullCount >= 5 OR PremiumFullCount >= 5) THEN
+		Stations.fbCycleControl.StopRequested := TRUE;
+		Status.AutoBaggerStatusMsg := 'AutoBagger: No drop location available.';
+	END_IF
+	
+
+eGoodULStaState.eDwell:
+    DwellTimer(IN:=GVL_IO.UL_XBarrelPresent, PT := T#50MS);  /// Need to add Part Data to get this status to find if part needs to be rejected
+	IF (DwellTimer.Q) THEN		
+        NextState := eGoodULStaState.eEngagePalletHoldDown;
+		ResetDwellTimer();
+		ResetStateTimer();
+    END_IF
+	StateTimer(IN:=TRUE, PT:= T#1S);
+	IF (StateTimer.Q) THEN
+		NextState := eGoodULStaState.eAbandonCycle;
+		ResetStateTimer();
+		ResetDwellTimer();
+		//NextState := eGoodULStaState.eEngagePalletHoldDown;
+	END_IF
+	
+ eGoodULStaState.eAbandonCycle:
+ 	Act_FreePalletHold();
+	Act_FreePalletRelease();
+	IF (IsPalletHoldDownFree() AND IsPalletReleaseFree()) THEN
+		ResetDwellTimer();
+        NextState := eGoodULStaState.eDepartVehicle;
+		Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.GOOD_UNLOAD_STA, VehicleID := VUT);
+		xTrigger:= FALSE;
+	END_IF
+	
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPReset;		
+		ResetDwellTimer();
+		ResetStateTimer();		
+        NextState := eGoodULStaState.eError;		
+	END_IF
+	
+		
+eGoodULStaState.eEngagePalletHoldDown:
+
+	Act_EngagePalletHold();
+	NextState := eGoodULStaState.ePalletHoldDownEngaged;;
+	IF (IsPalletHoldDownEngaged()) THEN	 // speed up more, don't wait here
+		NextState := eGoodULStaState.ePalletHoldDownEngaged;
+        //NextState := eGoodULStaState.eAbandonCycle;		
+	END_IF
+	
+eGoodULStaState.ePalletHoldDownEngaged:
+	//NextState:= eGoodULStaState.ePalletReleaseExtend;
+	NextState := eGoodULStaState.eHPMoveToPickFromTrack;
+	ResetDwellTimer();
+	ResetStateTimer();
+	
+eGoodULStaState.eHPMoveToPickFromTrack:
+    SetPPSequence(SequenceNumb := 2); // Pick location    
+	Act_MoveRotatorCenter(); // also move rotary while going down
+   	DwellTimer(IN:= TRUE, PT:= T#20MS);
+   	IF (DwellTimer.Q) THEN
+	   GVL_IO.UL_YPP_StartSeq := TRUE;
+	   ResetDwellTimer();
+   END_IF
+   StateTimer(IN:= GVL_IO.UL_YPP_StartSeq, PT:= T#20MS);
+   IF (StateTimer.Q) THEN
+	   NextState := eGoodULStaState.eHPAtPickFromTrack;
+	   ResetDwellTimer();
+	   ResetStateTimer();
+   END_IF
+
+
+eGoodULStaState.eHPAtPickFromTrack:
+	IF (CurrPPLoc = 2 ) THEN
+		//NextState:= eGoodULStaState.eHPCloseGrippers;
+		NextState := eGoodULStaState.eHPMoveToRotaryCenter;
+		ResetDwellTimer();
+		GVL_IO.UL_YPP_StartSeq := FALSE;
+	END_IF
+
+		
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPMoveToPickFromTrack;		
+		ResetDwellTimer();
+		ResetStateTimer();		
+		GVL_IO.UL_YPP_StartSeq := TRUE;
+        NextState := eGoodULStaState.eError;		
+		Status.GoodULStatusMsg:= 'Unload: PP Not At Pick Location';
+	END_IF
+	
+	
+	
+eGoodULStaState.eHPMoveToRotaryCenter:
+
+	Act_MoveRotatorCenter();
+	NextState := eGoodULStaState.eHPAtRotaryCenter;
+
+eGoodULStaState.eHPAtRotaryCenter:
+
+	 IF (IsRotatorCenter()) THEN
+		//NextState := eGoodULStaState.eDepartVehicle;
+		NextState:= eGoodULStaState.eHPCloseGrippers;
+		ResetDwellTimer();
+	END_IF
+	
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPMoveToRotaryCenter;		
+		ResetDwellTimer();
+		ResetStateTimer();	
+        NextState := eGoodULStaState.eError;	
+		
+	END_IF
+	
+
+	
+eGoodULStaState.eHPCloseGrippers:
+	Act_CloseGrippers();
+	//Act_EngagePalletRelease();
+	IF (IsGripperClosed()) THEN
+		//NextState := eGoodULStaState.eHPGrippersClosed;
+		Act_EngagePalletRelease();
+	END_IF
+	
+	//These three lines of code should be commented out to revert the sequence change
+	IF (IsPalletReleaseEngaged() AND IsGripperClosed()) THEN
+		NextState := eGoodULStaState.eHPGrippersClosed;
+		ResetDwellTimer();
+	END_IF
+	
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPCloseGrippers;		
+		ResetDwellTimer();
+		ResetStateTimer();	
+        NextState := eGoodULStaState.eError;			
+	END_IF
+
+
+eGoodULStaState.eHPGrippersClosed: //add logic here to decide which bagger location to go
+	//NextState := eGoodULStaState.eHPSendToInitLocNext;
+    IF (IsPalletHoldDownEngaged()) THEN	 
+      NextState:= eGoodULStaState.ePalletReleaseExtend;
+	  ResetDwellTimer();
+	END_IF 
+	
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eEngagePalletHoldDown;		
+		ResetDwellTimer();
+		ResetStateTimer();	
+        NextState := eGoodULStaState.eError;			
+	END_IF
+
+
+
+eGoodULStaState.ePalletReleaseExtend:
+
+	Act_EngagePalletRelease();
+	IF (IsPalletReleaseEngaged()) THEN
+		   NextState := eGoodULStaState.ePalletReleaseExtended;		   
+		   ResetDwellTimer();
+	END_IF
+
+eGoodULStaState.ePalletReleaseExtended:
+	DwellTimer(IN:= TRUE, PT := T#100MS);
+	IF (DwellTimer.Q) THEN 
+		NextState := eGoodULStaState.eHPSendToInitLocNext;
+		ResetDwellTimer();
+	END_IF
+  
+
+eGoodULStaState.eHPSendToInitLocNext:
+   // we have to set Seq 1 as InitLoc ( Up at Pick Location). Also, Input bits will corresponding to the sequence 
+   SetPPSequence(SequenceNumb := 1);
+   DwellTimer(IN:= TRUE, PT:= T#20MS);
+   IF (DwellTimer.Q) THEN
+	   GVL_IO.UL_YPP_StartSeq := TRUE;
+	   DwellTimer(IN:=FALSE);
+   END_IF
+   StateTimer(IN:= GVL_IO.UL_YPP_StartSeq, PT:= T#20MS);
+   IF (StateTimer.Q) THEN
+	   NextState := eGoodULStaState.eHPAtInitLocNext;
+	   ResetDwellTimer();
+	   ResetStateTimer();
+   END_IF
+ 
+eGoodULStaState.eHPAtInitLocNext:
+	IF (CurrPPLoc = 1 ) THEN
+		NextState:= eGoodULStaState.eReleasePalletHoldDown;		
+		GVL_IO.UL_YPP_StartSeq := FALSE;
+		UpdateLotData();
+		UpdatePartData();		
+		ResetDwellTimer();
+	END_IF
+	
+			
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPSendToInitLocNext;		
+		ResetDwellTimer();
+		ResetStateTimer();		
+		GVL_IO.UL_YPP_StartSeq := TRUE;
+        NextState := eGoodULStaState.eError;		
+		Status.GoodULStatusMsg:= 'Unload: PP Not At Init Location Next';
+	END_IF
+
+	
+eGoodULStaState.eReleasePalletHoldDown:
+	Act_FreePalletRelease();
+	//Act_FreePalletHold();
+	NextState := eGoodULStaState.eHPMoveToPlaceInBagLoc1; //eGoodULStaState.ePalletHoldDownReleased;
+
+	
+eGoodULStaState.eHPMoveToPlaceInBagLoc1:
+
+	IF (DropLocation = 1 OR DropLocation = 3) THEN
+		SetPPSequence(SequenceNumb := 3);
+	ELSIF (DropLocation = 2 OR DropLocation = 4) THEN
+		SetPPSequence(SequenceNumb := 4);
+	ELSE
+		Status.GoodULStatusMsg:= 'Unload: Problem with Pick & Place logic'; 
+		NextState := eGoodULStaState.eUnknown; 
+   	END_IF
+	DwellTimer(IN:= TRUE, PT:= T#20MS);
+   	IF (DwellTimer.Q) THEN
+	   GVL_IO.UL_YPP_StartSeq := TRUE;
+	   DwellTimer(IN:=FALSE);
+   END_IF
+   StateTimer(IN:= GVL_IO.UL_YPP_StartSeq, PT:= T#20MS);
+   IF (StateTimer.Q) THEN
+	   NextState := eGoodULStaState.eHPAtPlaceinBagLoc1;
+	   ResetDwellTimer();
+	   ResetStateTimer();
+	   IF (DropLocation = 1 OR DropLocation = 2) THEN
+			Act_MoveRotatorRight();
+		ELSE
+	   		Act_MoveRotatorLeft();
+		END_IF	  
+   END_IF
+   
+ eGoodULStaState.eHPAtPlaceinBagLoc1:
+	IF ((CurrPPLoc = 3 AND DropLocation = 1) OR 
+		(CurrPPLoc = 3 AND DropLocation = 3) OR
+        (CurrPPLoc = 4 AND DropLocation = 2) OR 
+		(CurrPPLoc = 4 AND DropLocation = 4)) THEN		
+		IF (DropLocation = 1 OR DropLocation = 2) THEN
+			Act_MoveRotatorRight();
+		ELSE
+	   		Act_MoveRotatorLeft();
+		END_IF
+		NextState:= eGoodULStaState.ePalletHoldDownReleased; //
+		Act_FreePalletHold(); // we moved this so that pallet release is down before hold down. Maybe helps in jams
+		GVL_IO.UL_YPP_StartSeq := FALSE;
+		StateTimer(IN:=FALSE);
+		ResetDwellTimer();
+	END_IF
+	
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPMoveToPlaceInBagLoc1;		
+		ResetDwellTimer();
+		ResetStateTimer();		
+		GVL_IO.UL_YPP_StartSeq := FALSE;
+        NextState := eGoodULStaState.eError;		
+		Status.GoodULStatusMsg:= 'Unload: PP Not At Init Location Next';
+	END_IF
+
+
+eGoodULStaState.ePalletHoldDownReleased: // release the Pallet Release At the same time ? 
+
+	IF ( IsPalletHoldDownFree() AND IsPalletReleaseFree()) THEN
+	 	 NextState:= eGoodULStaState.eAtCorrectRotaryLoc;
+	 	Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.GOOD_UNLOAD_STA, VehicleID := VUT);
+		xTrigger := FALSE;
+		ResetDwellTimer();
+    END_IF	
+	
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPAtPlaceinBagLoc1;		
+		ResetDwellTimer();
+		ResetStateTimer();		
+        NextState := eGoodULStaState.eError;	
+	END_IF
+
+eGoodULStaState.eAtCorrectRotaryLoc:
+    IF (DropLocation = 1 OR DropLocation = 2) THEN
+		IF (IsRotatorRight()) THEN
+			NextState := eGoodULStaState.eHPOpenGrippers;
+			ResetDwellTimer();
+		END_IF
+	ELSE
+    	IF (IsRotatorLeft()) THEN
+			NextState := eGoodULStaState.eHPOpenGrippers;
+			ResetDwellTimer();
+		END_IF
+    END_IF
+
+    DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPMoveToPlaceInBagLoc1;		
+		ResetDwellTimer();
+		ResetStateTimer();		
+        NextState := eGoodULStaState.eError;	
+	END_IF 	
+
+	
+	
+eGoodULStaState.eHPOpenGrippers:
+	Act_OpenGrippers();
+	DwellTimer(IN:=TRUE, PT:= T#30MS);
+	IF (DwellTimer.Q) THEN
+		NextState := eGoodULStaState.eHPGrippersOpen;
+		DwellTimer(IN:=FALSE);
+	END_IF
+
+eGoodULStaState.eHPGrippersOpen: //add logic here to increment parts in bag counter. //Done
+	IF (IsGripperOpen()) THEN
+		DwellTimer(IN:=TRUE, PT:= GripperOpenTimer);
+		IF (DwellTimer.Q) THEN
+			IF (DropLocation = 1 AND LotsData.Lot.AutoBaggerEnabled) THEN
+				Config.PremiumCount1 := Config.PremiumCount1 + 1;
+			ELSIF (DropLocation = 2 AND LotsData.Lot.AutoBaggerEnabled) THEN
+				Config.PremiumCount2 := Config.PremiumCount2 + 1;
+			ELSIF (DropLocation = 3 AND LotsData.Lot.AutoBaggerEnabled) THEN
+				Config.GoodCount1 := Config.GoodCount1 + 1;
+			ELSIF (DropLocation = 4 AND LotsData.Lot.AutoBaggerEnabled) THEN
+				Config.GoodCount2 := Config.GoodCount2 + 1;
+			END_IF
+			NextState := eGoodULStaState.eHPSendToInitLocAfterDrop; //eGoodULStaState.eMoveRotaryRight;	
+			DwellTimer(IN:=FALSE);
+		END_IF         
+	END_IF
+	IF (xTrigger) THEN                                /// this is from the next vehicle coming in 
+		Act_EngagePalletHold();
+        IF (IsPalletHoldDownEngaged()) THEN
+			;//Act_EngagePalletRelease();
+		END_IF 
+	END_IF
+	
+eGoodULStaState.eHPSendToInitLocAfterDrop:
+
+   // we have to set Seq 1 as InitLoc ( Up at Pick Location). Also, Input bits will corresponding to the sequence 
+  SetPPSequence(SequenceNumb := 1);
+   DwellTimer(IN:= TRUE, PT:= T#20MS);
+   IF (DwellTimer.Q) THEN
+	   GVL_IO.UL_YPP_StartSeq := TRUE;
+	   DwellTimer(IN:=FALSE);
+   END_IF
+   StateTimer(IN:= GVL_IO.UL_YPP_StartSeq, PT:= T#20MS);
+   IF (StateTimer.Q) THEN
+	   NextState := eGoodULStaState.eHPAtInitLocAfterDrop;//eGoodULStaState.eCheckRotaryAtRight;
+       ResetDwellTimer(); 
+   END_IF
+
+
+eGoodULStaState.eHPAtInitLocAfterDrop:
+
+	IF (CurrPPLoc = 1 ) THEN
+		//NextState:= eGoodULStaState.eHPMoveToRotaryCenter;
+		NextState := eGoodULStaState.eDepartVehicle;
+		GVL_IO.UL_YPP_StartSeq := FALSE;
+	END_IF
+
+	
+	IF (xTrigger) THEN                                /// this is from the next vehicle coming in 
+		Act_EngagePalletHold();
+        IF (IsPalletHoldDownEngaged()) THEN
+	//		Act_EngagePalletRelease();
+		END_IF 
+	END_IF
+	
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := eGoodULStaState.eHPMoveToPlaceInBagLoc1;		
+		ResetDwellTimer();
+		ResetStateTimer();		
+		GVL_IO.UL_YPP_StartSeq := FALSE;
+        NextState := eGoodULStaState.eError;		
+		Status.GoodULStatusMsg:= 'Unload: PP Not At Init Location After Drop';
+	END_IF
+
+
+(*	
+	IF (xTrigger) THEN                                /// this is from the next vehicle coming in 
+		Act_EngagePalletHold();
+        IF (IsPalletHoldDownEngaged()) THEN
+			Act_EngagePalletRelease();
+		END_IF 
+	END_IF
+*)
+eGoodULStaState.eDepartVehicle:
+
+	IF (Stations.fbCycleControl.StopRequested) THEN
+		NextState := eGoodULStaState.eStopActive;
+	ELSE
+		NextState := eGoodULStaState.eWaitForVehicleTrigger;
+		DwellTimer(IN:=FALSE);
+	END_IF
+
+eGoodULStaState.eStopActive:
+	IF (NOT Stations.fbCycleControl.StopRequested) THEN
+		NextState := eGoodULStaState.eHPReady;
+	END_IF
+		
+
+	
+eGoodULStaState.eError:
+	IF (GVL_IO.MC_XStartPB) THEN
+		NextState := ErrorReturnState;
+		ErrorReturnState := eGoodULStaState.eUnknown;
+	END_IF
+   
+	
+eGoodULStaState.eHPMoveToPlaceInBagLoc2:
+
+	GVL_IO.UL_YPP_BitA := FALSE;
+ 	GVL_IO.UL_YPP_BitB := FALSE;
+  	GVL_IO.UL_YPP_BitC := TRUE;
+   	DwellTimer(IN:= TRUE, PT:= T#30MS);
+   	IF (DwellTimer.Q) THEN
+	   GVL_IO.UL_YPP_StartSeq := TRUE;
+	   DwellTimer(IN:=FALSE);
+   END_IF
+   StateTimer(IN:= GVL_IO.UL_YPP_StartSeq, PT:= T#30MS);
+   IF (StateTimer.Q) THEN
+	   NextState := eGoodULStaState.eHPAtPlaceinBagLoc1;
+   END_IF
+
+
+eGoodULStaState.eHPAtPlaceinBagLoc2:
+
+	IF (NOT GVL_IO.UL_XPP_A1OUT AND  NOT GVL_IO.UL_XPP_A2OUT AND GVL_IO.UL_XPP_A3OUT) THEN
+		NextState:= eGoodULStaState.eTurnToRotartyCorrectSide;
+		GVL_IO.UL_YPP_StartSeq := FALSE;
+	END_IF
+	StateTimer(IN:=TRUE, PT:= T#10S); // give a message out every 10 seconds
+	IF (StateTimer.Q) THEN
+		Logging.fbEventMsg.SendEventMsg(MsgClass := TCEVENTCLASS_STATEINFO, EventID:= Logging.ID_UL_PPWaitMoveCmpl, SourceID:= Logging.SrcGoodULPOU);
+		StateTimer(IN:=FALSE);
+	END_IF
+
+eGoodULStaState.eTurnToRotartyCorrectSide: //WARNING !! this state is no longer used//add logic here to decide which side to turn the Rotary towards // this state is no longer used
+    IF (DropLocation = 1 OR DropLocation = 2) THEN
+		Act_MoveRotatorRight();
+	ELSE
+	    Act_MoveRotatorLeft();
+	END_IF
+	NextState := eGoodULStaState.eAtCorrectRotaryLoc;
+
+
+eGoodULStaState.eMoveRotaryRight:
+	GVL_IO.UL_YRotatorCWBarrelLeftBin := FALSE;;
+	GVL_IO.UL_YRotatorCCWBarrelRightBin := TRUE;
+
+	NextState := eGoodULStaState.eHPSendToInitLocAfterDrop; 
+
+
+
+
+
+   eGoodULStaState.eCheckRotaryAtRight:
+	 IF (NOT GVL_IO.UL_XRotatorCenter AND NOT GVL_IO.UL_XRotatorCWBarrelLeftBin AND GVL_IO.UL_XRotatorCWBarrelRightBin) THEN
+		NextState := eGoodULStaState.eReleasePalletHoldDown;
+	END_IF
+	P_TextModeWrite.WriteData := FALSE; // Don't know if this is needed
+	DwellTimer(IN:=TRUE, PT:= T#10S); // give a message out every 10 seconds
+	IF (DwellTimer.Q) THEN
+		Logging.fbEventMsg.SendEventMsg(MsgClass := TCEVENTCLASS_STATEINFO, EventID:= Logging.ID_UL_CheckCylinders, SourceID:= Logging.SrcGoodULPOU);
+		DwellTimer(IN:=FALSE);	
+	END_IF
+	StateTimer(IN:=TRUE, PT:= T#30S);  // if it is more than 10 seconds then we send the station into an unknown state and wait for operator to fix and hit start button again
+	IF (StateTimer.Q) THEN
+		Logging.fbEventMsg.SendEventMsg(MsgClass := TCEVENTCLASS_STATEINFO, EventID:= Logging.ID_UL_CheckCylinders, SourceID:= Logging.SrcGoodULPOU);
+		StateTimer(IN:=FALSE);
+		NextState := eGoodULStaState.eReleasePalletHoldDown; //move the vehicle out.. we need to notify the operator some kind of alarm here 
+	END_IF 
+	
+
+
+	
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+	StateTimer(IN:=FALSE);
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+AssignStationStatusForHMI();]]></ST>
+    </Implementation>
+    <Action Name="Act_CloseGrippers" Id="{1495bec1-7581-4ec5-b875-025b7816b817}">
+      <Implementation>
+        <ST><![CDATA[	GVL_IO.UL_YGrippersClose := TRUE;  
+	GVL_IO.UL_YGrippersOpen := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="ACT_EnablePP" Id="{d0d76d8e-1bf1-4f27-812f-e2c710c358fc}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_YPP_Enable := TRUE;   // Disable Drive
+GVL_IO.UL_YPP_Stop := FALSE;      // Set Drive to Stop
+GVL_IO.UL_YPP_ResetAlarm := FALSE;  // Clear Other Drive Inputs
+GVL_IO.UL_YPP_StartHoming := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_EngagePalletHold" Id="{2a954878-2e33-49fb-9489-c770c7af491b}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_YPalletHoldDownExtend_Home := FALSE; //Raise PalletHold Down 
+GVL_IO.UL_YPalletHoldDownRetract_Engage := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_EngagePalletRelease" Id="{e8ca5ead-af80-4b73-b0e4-3c2feb87e6fb}">
+      <Implementation>
+        <ST><![CDATA[//GVL_IO.UL_YPalletReleaseExtend := TRUE;    //Lower Pallet Release
+//GVL_IO.UL_YPalletReleaseRetract := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_FreePalletHold" Id="{06bd5e87-1876-4adf-b23b-8d936624cbb8}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_YPalletHoldDownExtend_Home := TRUE; //Raise PalletHold Down 
+GVL_IO.UL_YPalletHoldDownRetract_Engage := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_FreePalletRelease" Id="{4bf07948-1af9-4f2c-991b-f0523516fdb8}">
+      <Implementation>
+        <ST><![CDATA[//GVL_IO.UL_YPalletReleaseExtend := FALSE;    //Lower Pallet Release
+//GVL_IO.UL_YPalletReleaseRetract := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_MoveRotatorCenter" Id="{5fceeed6-e376-45b2-9cda-9de98f6bb0f9}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_YRotatorCCWBarrelRightBin := TRUE; //Move Rotator to Center Location
+GVL_IO.UL_YRotatorCWBarrelLeftBin := TRUE;// Move the Rotator to Center Location]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_MoveRotatorLeft" Id="{b1fc4103-df3d-459e-9878-c0a8f44b9a9b}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_YRotatorCCWBarrelRightBin := FALSE; //Move Rotator to Center Location
+   GVL_IO.UL_YRotatorCWBarrelLeftBin := TRUE;// Move the Rotator to Center Location]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_MoveRotatorRight" Id="{dd69ecee-bcd2-4e48-a8ba-36fcefcc5a7d}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_YRotatorCCWBarrelRightBin := TRUE; //Move Rotator to Center Location
+GVL_IO.UL_YRotatorCWBarrelLeftBin := FALSE;// Move the Rotator to Center Location]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_OpenGrippers" Id="{605fe3d7-0d77-4dca-90a8-eb0b1dafb022}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_YGrippersClose := FALSE;  //Open grippers
+GVL_IO.UL_YGrippersOpen := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_ResetPPIO" Id="{aa0e5ffe-abe7-4c20-a226-986da5b8b786}">
+      <Implementation>
+        <ST><![CDATA[	//PP fieldbus commands
+	GVL_IO.UL_YPP_BitA := FALSE;   // Turn off selection bits
+	GVL_IO.UL_YPP_BitB := FALSE;
+	GVL_IO.UL_YPP_BitC := FALSE;
+	GVL_IO.UL_YPP_Enable := FALSE;   // Disable Drive
+	GVL_IO.UL_YPP_Stop := TRUE;      // Set Drive to Stop
+	GVL_IO.UL_YPP_ResetAlarm := FALSE;  // Clear Other Drive Inputs
+	GVL_IO.UL_YPP_StartHoming := FALSE;
+	GVL_IO.UL_YPP_StartSeq := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="AssignStationStatusForHMI" Id="{4889dae4-9727-4ef5-a0b2-853b56d89781}">
+      <Declaration><![CDATA[METHOD PUBLIC AssignStationStatusForHMI : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.StationsState[MM_CONST.GOOD_UNLOAD_STA_HMI_STATE] := State;
+IF (NOT LotsData.Lot.GoodUnloadEnabled) THEN
+	Status.StationStauts[MM_CONST.GOOD_UNLOAD_STA_HMI_STATE] := OverallStationStatus.eDisabled;
+ELSE	
+	CASE State OF
+	eGoodULStaState.eUnknown,eGoodULStaState.eError:
+		Status.StationStauts[MM_CONST.GOOD_UNLOAD_STA_HMI_STATE] := OverallStationStatus.eError;
+    
+    eGoodULStaState.eInit,eGoodULStaState.eHoming,
+	eGoodULStaState.eHPReset,eGoodULStaState.eHPCheckEnabled,eGoodULStaState.eHPSendHome,
+	eGoodULStaState.eHPHomed,eGoodULStaState.eHPSendToInitLoc, eGoodULStaState.eHPAtInitLoc,
+	eGoodULStaState.eHPReady:
+	     Status.StationStauts[MM_CONST.GOOD_UNLOAD_STA_HMI_STATE] := OverallStationStatus.eHoming;
+	
+   	eGoodULStaState.eWaitForVehicleTrigger:
+	     Status.StationStauts[MM_CONST.GOOD_UNLOAD_STA_HMI_STATE] := OverallStationStatus.eWaitingForParts;
+		 
+	eGoodULStaState.eDwell,
+	eGoodULStaState.eEngagePalletHoldDown,
+	eGoodULStaState.ePalletHoldDownEngaged,
+	eGoodULStaState.ePalletReleaseExtend,
+	eGoodULStaState.ePalletReleaseExtended,
+	eGoodULStaState.eHPMoveToRotaryCenter,
+	eGoodULStaState.eHPAtRotaryCenter,
+	eGoodULStaState.eHPMoveToPickFromTrack,
+	eGoodULStaState.eHPAtPickFromTrack,
+	eGoodULStaState.eHPCloseGrippers,
+	eGoodULStaState.eHPGrippersClosed,
+	eGoodULStaState.eHPSendToInitLocNext,
+	eGoodULStaState.eHPAtInitLocNext,
+	eGoodULStaState.eHPMoveToPlaceInBagLoc1,
+	eGoodULStaState.eHPMoveToPlaceInBagLoc2,
+	eGoodULStaState.eHPAtPlaceinBagLoc1,
+	eGoodULStaState.eHPAtPlaceinBagLoc2,
+	eGoodULStaState.eTurnToRotartyCorrectSide,
+	eGoodULStaState.eAtCorrectRotaryLoc,
+	eGoodULStaState.eHPOpenGrippers,
+	eGoodULStaState.eHPGrippersOpen,	
+	eGoodULStaState.eMoveRotaryRight,
+	eGoodULStaState.eCheckRotaryAtRight,
+	eGoodULStaState.eReleasePalletHoldDown,
+	eGoodULStaState.eHPSendToInitLocAfterDrop,
+	eGoodULStaState.ePalletHoldDownReleased,
+    eGoodULStaState.eHPAtInitLocAfterDrop:
+	    Status.StationStauts[MM_CONST.GOOD_UNLOAD_STA_HMI_STATE] := OverallStationStatus.eRunning;
+	
+	eGoodULStaState.eStopActive:
+	    Status.StationStauts[MM_CONST.GOOD_UNLOAD_STA_HMI_STATE] := OverallStationStatus.eCycleStop;
+	ELSE;
+	END_CASE
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearVehicleTrigger" Id="{9158d632-4545-496e-a01f-197a347c151d}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="GetPPLocation" Id="{090ad36b-0226-43ce-a558-160e631f7521}">
+      <Declaration><![CDATA[METHOD PUBLIC GetPPLocation : BOOL
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+	Location : BYTE;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Location.0 := GVL_IO.UL_XPP_A1OUT;
+Location.1 := GVL_IO.UL_XPP_A2OUT;
+Location.2 := GVL_IO.UL_XPP_A3OUT;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsFaulted" Id="{0b77e676-7e56-4821-87bc-441207688ca9}">
+      <Declaration><![CDATA[METHOD PUBLIC IsFaulted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsFaulted := (State = eGoodULStaState.eUnknown OR State = eGoodULStaState.eError);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsGripperClosed" Id="{e18dfc06-5476-4237-8bb1-f61ab9b84ad1}">
+      <Declaration><![CDATA[METHOD PUBLIC IsGripperClosed : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsGripperClosed := (NOT GVL_IO.UL_XGrippersOpened (*AND GVL_IO.UL_XGrippersClosed*)); 
+IF(NOT IsGripperClosed) THEN
+	Status.GoodULStatusMsg:= 'Unload: Check Gripper Sensors';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsGripperOpen" Id="{b7964bbb-f300-434e-8920-44034c652967}">
+      <Declaration><![CDATA[METHOD PUBLIC IsGripperOpen : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsGripperOpen := (GVL_IO.UL_XGrippersOpened AND NOT GVL_IO.UL_XGrippersClosed); 
+IF(NOT IsGripperOpen) THEN
+	Status.GoodULStatusMsg:= 'Unload: Check Gripper Sensors';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownEngaged" Id="{ad9dc929-dfb7-4628-bd9e-52e4a1511a10}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownEngaged : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownEngaged := (NOT GVL_IO.UL_XPalletHoldDownExtended_Home AND GVL_IO.UL_XPalletHoldDownRetracted_Engaged);
+IF (NOT IsPalletHoldDownEngaged) THEN Status.GoodULStatusMsg := 'Failed to Engage Pallet HoldDown Sensors'; END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownFree" Id="{5075a50b-56e7-408b-954e-3caa799a7dc3}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownFree : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownFree := (GVL_IO.UL_XPalletHoldDownExtended_Home AND NOT GVL_IO.UL_XPalletHoldDownRetracted_Engaged);
+IF (NOT IsPalletHoldDownFree) THEN Status.GoodULStatusMsg := 'Failed to Release Pallet HoldDown Sensors'; END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletReleaseEngaged" Id="{9d75f879-2c28-46e7-80ae-ea7ce75f784a}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletReleaseEngaged : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletReleaseEngaged := TRUE; // The new Pallet Design doesn't require Pallet Release to be Engaged
+//IsPalletReleaseEngaged := (NOT GVL_IO.UL_XPalletReleaseHome AND GVL_IO.UL_XPalletReleaseExtended);
+//IF (NOT IsPalletReleaseEngaged) THEN Status.GoodULStatusMsg := 'Unload: Check Pallet Release Sensors'; END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletReleaseFree" Id="{19f65c4c-f76d-4a34-be17-1e9bd016e96c}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletReleaseFree : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletReleaseFree := TRUE; // new Pallet Design doesn't require Pallet Release Engage to be Extended
+//IsPalletReleaseFree := (GVL_IO.UL_XPalletReleaseHome AND NOT GVL_IO.UL_XPalletReleaseExtended);
+//IF (NOT IsPalletReleaseFree) THEN Status.GoodULStatusMsg := 'Unload: Check Pallet Release Sensors'; END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsRotatorCenter" Id="{ed9e64c6-3bf5-43f9-9ea0-771bac942597}">
+      <Declaration><![CDATA[METHOD PUBLIC IsRotatorCenter : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsRotatorCenter := (GVL_IO.UL_XRotatorCenter AND NOT GVL_IO.UL_XRotatorCWBarrelLeftBin AND NOT GVL_IO.UL_XRotatorCWBarrelRightBin);
+IF (NOT IsRotatorCenter) THEN Status.GoodULStatusMsg := 'Not At Center Check Rotator Sensor'; END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsRotatorLeft" Id="{57e2efde-834b-4456-af79-abe916ba8684}">
+      <Declaration><![CDATA[METHOD PUBLIC IsRotatorLeft : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsRotatorLeft := (NOT GVL_IO.UL_XRotatorCenter AND GVL_IO.UL_XRotatorCWBarrelLeftBin AND NOT GVL_IO.UL_XRotatorCWBarrelRightBin);
+IF (NOT IsRotatorLeft) THEN Status.GoodULStatusMsg := 'Not At Left Check Rotator Sensor'; END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsRotatorRight" Id="{6ed854e7-42c7-41f4-a644-8afeafb370cb}">
+      <Declaration><![CDATA[METHOD PUBLIC IsRotatorRight : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsRotatorRight := (NOT GVL_IO.UL_XRotatorCenter AND NOT GVL_IO.UL_XRotatorCWBarrelLeftBin AND GVL_IO.UL_XRotatorCWBarrelRightBin);
+IF (NOT IsRotatorRight) THEN Status.GoodULStatusMsg := 'Not At Right, Check Rotator Sensor'; END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Ready" Id="{e2771a52-a5b5-4624-be5d-056fb88ce323}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{7379ee32-79a2-4a0b-84ab-1fd97d176e3f}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[IF (LotsData.Lot.GoodUnloadEnabled) THEN
+	Ready := (State = eGoodULStaState.eWaitForVehicleTrigger);
+ELSE
+	Ready := (State = eGoodULStaState.eDisabledReady);	
+END_IF	]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Action Name="ResetDwellTimer" Id="{357e02f3-9702-422f-b3c9-80089a10eead}">
+      <Implementation>
+        <ST><![CDATA[DwellTimer(IN:=FALSE);]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="ResetState" Id="{292965db-2a75-4ddd-a47d-7f2713cea994}">
+      <Declaration><![CDATA[METHOD ResetState : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	State := eGoodULStaState.eUnknown;
+	NextState := eGoodULStaState.eUnknown;]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="ResetStateTimer" Id="{a2ab7e5e-5742-4248-adc8-1b550438e30c}">
+      <Implementation>
+        <ST><![CDATA[StateTimer(IN:=FALSE);]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="SetPPSequence" Id="{9e3a2fe4-0b15-49b5-a7b0-0844001e63f6}">
+      <Declaration><![CDATA[METHOD PUBLIC SetPPSequence : BOOL
+VAR_INPUT
+	SequenceNumb : BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE SequenceNumb OF 
+	0:
+	   GVL_IO.UL_YPP_BitA := FALSE;
+   	   GVL_IO.UL_YPP_BitB := FALSE;
+   	   GVL_IO.UL_YPP_BitC := FALSE;
+	1:
+	   GVL_IO.UL_YPP_BitA := TRUE;
+   	   GVL_IO.UL_YPP_BitB := FALSE;
+   	   GVL_IO.UL_YPP_BitC := FALSE;
+	2:
+	   GVL_IO.UL_YPP_BitA := FALSE;
+   	   GVL_IO.UL_YPP_BitB := TRUE;
+   	   GVL_IO.UL_YPP_BitC := FALSE;
+	3:
+	   GVL_IO.UL_YPP_BitA := TRUE;
+   	   GVL_IO.UL_YPP_BitB := TRUE;
+   	   GVL_IO.UL_YPP_BitC := FALSE;
+	4:
+		GVL_IO.UL_YPP_BitA := FALSE;
+   	    GVL_IO.UL_YPP_BitB := FALSE;
+   	    GVL_IO.UL_YPP_BitC := TRUE;
+	5:
+	    GVL_IO.UL_YPP_BitA := TRUE;
+   	   	GVL_IO.UL_YPP_BitB := FALSE;
+   	   	GVL_IO.UL_YPP_BitC := TRUE;
+	6: 
+	    GVL_IO.UL_YPP_BitA := FALSE;
+   	   	GVL_IO.UL_YPP_BitB := TRUE;
+   	   	GVL_IO.UL_YPP_BitC := TRUE;
+	7:
+	    GVL_IO.UL_YPP_BitA := TRUE;
+   	    GVL_IO.UL_YPP_BitB := TRUE;
+   	    GVL_IO.UL_YPP_BitC := TRUE;
+	ELSE;
+			
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Trigger" Id="{6bcf7be3-5dbc-451b-9475-66e9716ef346}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{6886f47f-0e85-4ae2-89cb-35a051c9b27c}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="UpdateLotData" Id="{fd065837-1516-4b49-8385-60fbf6a5abb3}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdateLotData : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (PartsData.Status[VUT].Premium) THEN
+	LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].PremiumCount := LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].PremiumCount +1;
+ELSIF (PartsData.Status[VUT].Good) THEN
+ 	LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].GoodCount := LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].GoodCount + 1;
+END_IF
+LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].TotalCount := LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].TotalCount + 1;
+ // reject parts shouldn't get here. If this station rejects something (e.g. faults out) then it barrel will go to reject station.]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="UpdatePartData" Id="{4a7cc6f2-0958-4d2d-b9ca-6f2b17a416bc}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdatePartData : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[PartsData.Status[VUT].UnloadTime := SYSTEMTIME_TO_STRING(Logging.fbCurrTime.systemTime);
+PartsData.Status[VUT].OverallStatus := ePartStatus.eEmpty;
+PartsData.Status[VUT].GoodUnload := TRUE;
+
+// we will write data to CSV file over here 
+IF (P_TextModeWrite.CurrWriteStep = 0) THEN 
+	P_TextModeWrite.VehicleID := VUT;
+	P_TextModeWrite.WriteData := TRUE;
+END_IF ]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="VehicleUnderTest" Id="{f37ed29e-6837-4d16-bb57-fa7eb5bf7d45}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{46e63dbc-86ed-4a8f-821b-f57595770352}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{8584ad51-33ed-41c5-9978-c5e4a6805501}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="GoodUnloadStation">
+      <LineId Id="2602" Count="6" />
+      <LineId Id="3433" Count="0" />
+      <LineId Id="3436" Count="0" />
+      <LineId Id="3443" Count="0" />
+      <LineId Id="3439" Count="0" />
+      <LineId Id="3442" Count="0" />
+      <LineId Id="3467" Count="1" />
+      <LineId Id="3437" Count="0" />
+      <LineId Id="3434" Count="1" />
+      <LineId Id="2609" Count="6" />
+      <LineId Id="2623" Count="1" />
+      <LineId Id="2626" Count="17" />
+      <LineId Id="3551" Count="0" />
+      <LineId Id="3553" Count="2" />
+      <LineId Id="3557" Count="2" />
+      <LineId Id="3552" Count="0" />
+      <LineId Id="2650" Count="12" />
+      <LineId Id="3566" Count="0" />
+      <LineId Id="2663" Count="2" />
+      <LineId Id="3560" Count="4" />
+      <LineId Id="3584" Count="0" />
+      <LineId Id="3565" Count="0" />
+      <LineId Id="2672" Count="4" />
+      <LineId Id="3575" Count="0" />
+      <LineId Id="2677" Count="2" />
+      <LineId Id="2681" Count="3" />
+      <LineId Id="3567" Count="5" />
+      <LineId Id="3585" Count="0" />
+      <LineId Id="3573" Count="1" />
+      <LineId Id="2692" Count="4" />
+      <LineId Id="2698" Count="0" />
+      <LineId Id="3587" Count="0" />
+      <LineId Id="2703" Count="3" />
+      <LineId Id="3576" Count="0" />
+      <LineId Id="3578" Count="4" />
+      <LineId Id="3588" Count="0" />
+      <LineId Id="3586" Count="0" />
+      <LineId Id="3583" Count="0" />
+      <LineId Id="3577" Count="0" />
+      <LineId Id="2714" Count="7" />
+      <LineId Id="3597" Count="1" />
+      <LineId Id="2722" Count="0" />
+      <LineId Id="2736" Count="0" />
+      <LineId Id="3589" Count="7" />
+      <LineId Id="2737" Count="12" />
+      <LineId Id="3599" Count="1" />
+      <LineId Id="2750" Count="5" />
+      <LineId Id="3609" Count="1" />
+      <LineId Id="2756" Count="0" />
+      <LineId Id="3601" Count="7" />
+      <LineId Id="2763" Count="12" />
+      <LineId Id="3640" Count="0" />
+      <LineId Id="2777" Count="0" />
+      <LineId Id="3641" Count="0" />
+      <LineId Id="2778" Count="0" />
+      <LineId Id="2780" Count="3" />
+      <LineId Id="3629" Count="0" />
+      <LineId Id="3631" Count="4" />
+      <LineId Id="3638" Count="0" />
+      <LineId Id="3630" Count="0" />
+      <LineId Id="3628" Count="0" />
+      <LineId Id="3617" Count="0" />
+      <LineId Id="2784" Count="20" />
+      <LineId Id="2810" Count="0" />
+      <LineId Id="3611" Count="0" />
+      <LineId Id="2813" Count="1" />
+      <LineId Id="3612" Count="1" />
+      <LineId Id="2815" Count="0" />
+      <LineId Id="3381" Count="0" />
+      <LineId Id="3383" Count="0" />
+      <LineId Id="2817" Count="0" />
+      <LineId Id="3471" Count="1" />
+      <LineId Id="3469" Count="0" />
+      <LineId Id="2818" Count="14" />
+      <LineId Id="3473" Count="2" />
+      <LineId Id="2833" Count="19" />
+      <LineId Id="3399" Count="0" />
+      <LineId Id="3499" Count="0" />
+      <LineId Id="3401" Count="2" />
+      <LineId Id="2853" Count="7" />
+      <LineId Id="3616" Count="0" />
+      <LineId Id="2861" Count="3" />
+      <LineId Id="3614" Count="1" />
+      <LineId Id="2865" Count="7" />
+      <LineId Id="3642" Count="0" />
+      <LineId Id="2873" Count="2" />
+      <LineId Id="3618" Count="0" />
+      <LineId Id="3620" Count="4" />
+      <LineId Id="3627" Count="0" />
+      <LineId Id="3619" Count="0" />
+      <LineId Id="2883" Count="9" />
+      <LineId Id="3783" Count="0" />
+      <LineId Id="3785" Count="3" />
+      <LineId Id="3784" Count="0" />
+      <LineId Id="2893" Count="0" />
+      <LineId Id="3687" Count="71" />
+      <LineId Id="3775" Count="0" />
+      <LineId Id="3759" Count="14" />
+      <LineId Id="3789" Count="0" />
+      <LineId Id="3774" Count="0" />
+      <LineId Id="2901" Count="0" />
+      <LineId Id="3777" Count="5" />
+      <LineId Id="3776" Count="0" />
+      <LineId Id="2902" Count="0" />
+      <LineId Id="3651" Count="0" />
+      <LineId Id="2906" Count="5" />
+      <LineId Id="4004" Count="0" />
+      <LineId Id="2912" Count="0" />
+      <LineId Id="2922" Count="1" />
+      <LineId Id="2926" Count="0" />
+      <LineId Id="4008" Count="1" />
+      <LineId Id="4011" Count="0" />
+      <LineId Id="4010" Count="0" />
+      <LineId Id="4006" Count="0" />
+      <LineId Id="3017" Count="11" />
+      <LineId Id="3790" Count="1" />
+      <LineId Id="3029" Count="7" />
+      <LineId Id="3803" Count="0" />
+      <LineId Id="3037" Count="0" />
+      <LineId Id="3792" Count="0" />
+      <LineId Id="3794" Count="8" />
+      <LineId Id="3793" Count="0" />
+      <LineId Id="3044" Count="25" />
+      <LineId Id="3804" Count="1" />
+      <LineId Id="4013" Count="3" />
+      <LineId Id="4012" Count="0" />
+      <LineId Id="3075" Count="2" />
+      <LineId Id="3325" Count="0" />
+      <LineId Id="3322" Count="0" />
+      <LineId Id="3326" Count="0" />
+      <LineId Id="3078" Count="9" />
+      <LineId Id="3822" Count="0" />
+      <LineId Id="3088" Count="0" />
+      <LineId Id="3812" Count="0" />
+      <LineId Id="3814" Count="7" />
+      <LineId Id="3813" Count="0" />
+      <LineId Id="3811" Count="0" />
+      <LineId Id="3096" Count="6" />
+      <LineId Id="3890" Count="0" />
+      <LineId Id="3103" Count="0" />
+      <LineId Id="3823" Count="0" />
+      <LineId Id="3825" Count="4" />
+      <LineId Id="3831" Count="0" />
+      <LineId Id="3824" Count="0" />
+      <LineId Id="3834" Count="4" />
+      <LineId Id="3899" Count="0" />
+      <LineId Id="3839" Count="3" />
+      <LineId Id="3900" Count="0" />
+      <LineId Id="3843" Count="1" />
+      <LineId Id="3892" Count="6" />
+      <LineId Id="3891" Count="0" />
+      <LineId Id="3856" Count="33" />
+      <LineId Id="3901" Count="0" />
+      <LineId Id="3903" Count="11" />
+      <LineId Id="3969" Count="0" />
+      <LineId Id="3902" Count="0" />
+      <LineId Id="3918" Count="8" />
+      <LineId Id="3931" Count="7" />
+      <LineId Id="3970" Count="0" />
+      <LineId Id="3972" Count="7" />
+      <LineId Id="3971" Count="0" />
+      <LineId Id="3939" Count="29" />
+      <LineId Id="3109" Count="0" />
+      <LineId Id="3916" Count="0" />
+      <LineId Id="3110" Count="36" />
+      <LineId Id="3202" Count="8" />
+      <LineId Id="3223" Count="18" />
+      <LineId Id="3355" Count="0" />
+      <LineId Id="3288" Count="11" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Act_CloseGrippers">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.ACT_EnablePP">
+      <LineId Id="2" Count="2" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Act_EngagePalletHold">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Act_EngagePalletRelease">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Act_FreePalletHold">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Act_FreePalletRelease">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Act_MoveRotatorCenter">
+      <LineId Id="3" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Act_MoveRotatorLeft">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Act_MoveRotatorRight">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Act_OpenGrippers">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Act_ResetPPIO">
+      <LineId Id="2" Count="7" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.AssignStationStatusForHMI">
+      <LineId Id="6" Count="4" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="70" Count="1" />
+      <LineId Id="36" Count="26" />
+      <LineId Id="73" Count="1" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.ClearVehicleTrigger">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.GetPPLocation">
+      <LineId Id="14" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.IsFaulted">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.IsGripperClosed">
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.IsGripperOpen">
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.IsPalletHoldDownEngaged">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.IsPalletHoldDownFree">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.IsPalletReleaseEngaged">
+      <LineId Id="10" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.IsPalletReleaseFree">
+      <LineId Id="10" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.IsRotatorCenter">
+      <LineId Id="6" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.IsRotatorLeft">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.IsRotatorRight">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Ready.Get">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.ResetDwellTimer">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.ResetState">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.ResetStateTimer">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.SetPPSequence">
+      <LineId Id="7" Count="0" />
+      <LineId Id="20" Count="2" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="17" Count="2" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="23" Count="2" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="26" Count="2" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="29" Count="2" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="32" Count="2" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="35" Count="2" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="38" Count="4" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.UpdateLotData">
+      <LineId Id="6" Count="3" />
+      <LineId Id="17" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.UpdatePartData">
+      <LineId Id="9" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="6" Count="1" />
+      <LineId Id="10" Count="1" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodUnloadStation.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

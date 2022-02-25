@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_B4Cmd" Id="{b3c541e7-346d-4031-a206-0b80d3ef77d1}">
+    <Declaration><![CDATA[(* B4 = Suspend Movement *)
+TYPE ST_B4Cmd :
+STRUCT
+	Cmd_Header	:BYTE	:=16#B4;	(* 1 byte*)
+	PathID		:UINT	:=0; 		(*2 bytes*)
+	CRC			:UINT   :=0;        (*2 bytes *) 
+	//CRC1		:BYTE	:=16#00;    (* 1 byte*)
+	//CRC2		:BYTE	:=16#00;    (* 2 byte*)
+	
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

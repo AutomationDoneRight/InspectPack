@@ -1,0 +1,166 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="OB_StopRobotClearStation" Id="{4ebeb43e-907a-4019-a0a5-420aa63a9667}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC OB_StopRobotClearStation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : eOB_StopRobotClearStaState := eOB_StopRobotClearStaState.eUnknown;
+	NextState : eOB_StopRobotClearStaState := eOB_StopRobotClearStaState.eUnknown;
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;
+	MoveVehicleToLoad: BOOL := TRUE; //We have to send the Vehicle to Load Position # 4 at startup
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[CASE State OF
+
+eOB_StopRobotClearStaState.eUnknown:
+	NextState := eOB_StopRobotClearStaState.eReady;
+
+eOB_StopRobotClearStaState.eInit:
+
+eOB_StopRobotClearStaState.eHoming:
+
+eOB_StopRobotClearStaState.eReady:
+IF (xTrigger) THEN
+		NextState := eOB_StopRobotClearStaState.eProcessing;
+		
+		DwellTimer(IN:=FALSE);
+	END_IF
+
+eOB_StopRobotClearStaState.eDwell:
+
+eOB_StopRobotClearStaState.eProcessing:
+  IF (MoveVehicleToLoad) THEN
+	  NextState := eOB_StopRobotClearStaState.eDepart;
+  END_IF
+
+eOB_StopRobotClearStaState.eDepart:
+	
+    Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.OB_STOP_ROBOT_CLEAR_STA, VehicleID := VUT);
+	xTrigger := FALSE;
+	MoveVehicleToLoad := FALSE;	
+	NextState := eOB_StopRobotClearStaState.eReady;
+
+eOB_StopRobotClearStaState.eError:
+
+ELSE;
+
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+
+Status.StationsState[MM_CONST.OB_STOP_ROBOT_CLEAR_STA_HMI_STATE] := State;]]></ST>
+    </Implementation>
+    <Method Name="ClearVehicleTrigger" Id="{b7098c1e-d1fc-4ec2-b1df-66639cd9ffc3}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;
+State := eOB_StopRobotClearStaState.eUnknown;
+NextState:= eOB_StopRobotClearStaState.eUnknown;
+bFirst  := TRUE;
+MoveVehicleToLoad := TRUE; //We have to send the Vehicle to Load Position # 4 at startup]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="MoveToLoading" Id="{4c7ea59a-bcb3-415c-9007-8fe1c9cfecd1}">
+      <Declaration><![CDATA[PROPERTY PUBLIC MoveToLoading : BOOL]]></Declaration>
+      <Set Name="Set" Id="{b9674ea6-1294-4251-8340-cb830ed9ebd0}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[MoveVehicleToLoad := MoveToLoading;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="Trigger" Id="{379d2162-3f8a-4e6c-b755-88309af6de26}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{e2b351f4-7441-4b22-affb-367fa2ee7e6d}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="VehicleUnderTest" Id="{99345c28-8d08-4f0c-8947-2857472d7424}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{54810044-f560-48ae-87b8-a29789f67911}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{32ebcb68-1970-4183-8d7e-d5dcfecd041f}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="OB_StopRobotClearStation">
+      <LineId Id="11" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="74" Count="2" />
+      <LineId Id="110" Count="0" />
+      <LineId Id="114" Count="3" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="118" Count="2" />
+      <LineId Id="81" Count="2" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="84" Count="1" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="105" Count="1" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="13" Count="7" />
+      <LineId Id="102" Count="1" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="OB_StopRobotClearStation.ClearVehicleTrigger">
+      <LineId Id="9" Count="0" />
+      <LineId Id="11" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="OB_StopRobotClearStation.MoveToLoading.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="OB_StopRobotClearStation.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="OB_StopRobotClearStation.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="OB_StopRobotClearStation.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

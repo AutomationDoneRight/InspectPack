@@ -1,0 +1,161 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="StationManager" Id="{3bea6e74-ad93-4a06-afc2-89b8f54cda95}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC StationManager
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[;]]></ST>
+    </Implementation>
+    <Method Name="NotifyStationNewVehArrival" Id="{ea3af994-aee1-46c5-a0f2-3db7a4ef7bf1}">
+      <Declaration><![CDATA[METHOD PUBLIC NotifyStationNewVehArrival : BOOL
+VAR_INPUT
+	Pos 			:	REAL;
+	StationIndex 	:	BYTE;
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE StationIndex OF
+
+ 
+MM_CONST.LOAD_1_STA:
+	Stations.fbLoad1Sta.VehicleUnderTest := VehicleID;	
+    Stations.fbLoad1Sta.Trigger := TRUE;
+		
+
+MM_CONST.LOAD_2_STA:
+	Stations.fbLoad2Sta.VehicleUnderTest := VehicleID;		   
+    Stations.fbLoad2Sta.Trigger := TRUE;
+        			
+MM_CONST.LOAD_3_STA:
+	Stations.fbLoad3Sta.VehicleUnderTest := VehicleID;	
+	Stations.fbLoad3Sta.Trigger := TRUE;					
+
+MM_CONST.LOAD_4_STA:					
+	Stations.fbLoad4Sta.VehicleUnderTest := VehicleID;
+	Stations.fbLoad4Sta.Trigger := TRUE;	
+
+MM_CONST.STOP_BEFORE_VISION_STA:
+	Stations.fbOB_StopBeforeVisionSta.VehicleUnderTest := VehicleID;
+	Stations.fbOB_StopBeforeVisionSta.Trigger := TRUE;
+
+MM_CONST.VISION_STA:
+	Stations.fbVisionSta.VehicleUnderTest := VehicleID;
+	Stations.fbVisionSta.Trigger := TRUE;
+
+MM_CONST.PISTON_STA:
+	Stations.fbPistonSta.VehicleUnderTest := VehicleID;
+	Stations.fbPistonSta.Trigger := TRUE;
+
+MM_CONST.CAP_STA:
+	Stations.fbCapInsertSta.VehicleUnderTest := VehicleID;
+	Stations.fbCapInsertSta.Trigger := TRUE;
+
+MM_CONST.IB_STOP_ROBOT_CLEAR_STA:
+	Stations.fbIB_StopRobotSta.VehicleUnderTest := VehicleID;
+	Stations.fbIB_StopRobotSta.Trigger := TRUE;
+
+MM_CONST.REJECT_ULOAD_STA:
+	Stations.fbRejectSta.VehicleUnderTest := VehicleID;
+	Stations.fbRejectSta.Trigger := TRUE;
+
+MM_CONST.GOOD_UL_1_STA:
+	Stations.fbGoodULSta_1.VehicleUnderTest := VehicleID;
+	Stations.fbGoodULSta_1.Trigger := TRUE;
+
+MM_CONST.GOOD_UL_2_STA:
+	Stations.fbGoodULSta_2.VehicleUnderTest := VehicleID;
+	Stations.fbGoodULSta_2.Trigger := TRUE;
+
+MM_CONST.GOOD_UL_3_STA:
+	Stations.fbGoodULSta_3.VehicleUnderTest := VehicleID;
+	Stations.fbGoodULSta_3.Trigger := TRUE;
+
+MM_CONST.GOOD_UL_4_STA:
+	Stations.fbGoodULSta_4.VehicleUnderTest := VehicleID;
+	Stations.fbGoodULSta_4.Trigger := TRUE;
+
+(*	
+MM_CONST.GOOD_UNLOAD_STA:
+	Stations.fbGoodUnloadSta.VehicleUnderTest := VehicleID;
+	Stations.fbGoodUnloadSta.Trigger := TRUE;	
+ *)   
+MM_CONST.OB_STOP_ROBOT_CLEAR_STA:
+	Stations.fbOB_StopRobotSta.VehicleUnderTest := VehicleID;  
+    Stations.fbOB_StopRobotSta.Trigger := TRUE;
+ELSE ;
+	
+END_CASE	]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="StationManager">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="StationManager.NotifyStationNewVehArrival">
+      <LineId Id="85" Count="1" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="88" Count="1" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="94" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="113" Count="2" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="117" Count="2" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="121" Count="2" />
+      <LineId Id="120" Count="0" />
+      <LineId Id="124" Count="0" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="110" Count="1" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="97" Count="4" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

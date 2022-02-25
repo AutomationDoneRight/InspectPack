@@ -1,0 +1,355 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="PrimeMover" Id="{4112fe04-ff1c-4282-a791-079b11733fa2}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC PrimeMover
+VAR_IN_OUT
+	
+END_VAR
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	bInitialize : BOOL := TRUE;
+	State			:	ePrimeMoverState; 
+	NextState		:	ePrimeMoverState;	
+	ResetCmdStatus 	:	eMM_ResetCmdStatus;
+	StartupCmdStatus:	eMM_StartupCmdStatus;
+	HLCStatus		:	eMM_HLCStatus;
+	
+	// CycleControl will send a Trigger
+	Trigger: BOOL := FALSE;
+	// Temporary loop variable
+	COUNTER: UINT := 1;
+	VehicleInitMoveTimer : TON;
+	bAllVehStopped :BOOL := TRUE;
+	StateTimer :TON;
+	WaitAfterESTOPTimer : TON;
+	SuspendAfterESTOPTimer: TON;
+	bFirst : BOOL := TRUE;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (bInitialize) THEN
+	bInitialize := FALSE;
+	// to add all initialization code here
+END_IF
+
+
+CASE State OF
+
+ePrimeMoverState.eMMUnknown:
+    Status.PrimeMoverStatusMsg := 'MM: Unknown, Press Start';
+	GVL_IO.MM_YEnableMagneMotion := FALSE;
+    IF (GVL_IO.MC_XStartPB AND GVL_IO.MC_XAirPressureOK AND GVL_IO.MC_NotEStopped) THEN // wait for start button when powered up or PLC program restarted
+		NextState := ePrimeMoverState.eMMConnect;	   
+	END_IF
+
+	StateTimer(IN:=TRUE, PT:= T#9.3S); // give a message out every 10 seconds
+	IF (StateTimer.Q) THEN
+		Logging.fbEventMsg.SendEventMsg(MsgClass := TCEVENTCLASS_STATEINFO, EventID:= Logging.ID_MM_Unknown, SourceID:= Logging.SrcMMPOU);
+		StateTimer(IN:=FALSE);
+	END_IF
+
+
+ePrimeMoverState.eMMConnect:
+Status.PrimeMoverStatusMsg := 'MM: Socket Connecting';	
+IF (Stations.fbMMClient.eState = eSOCKET_CONNECTED) THEN
+		Stations.fbMMSendMsg.M_CmdHLCStatus();
+		NextState := ePrimeMoverState.eMMCheckStatus;
+	END_IF
+
+ePrimeMoverState.eMMCheckStatus:
+Status.PrimeMoverStatusMsg := 'MM: Checking HLC Status';
+	IF (HLCStatus = eMM_HLCStatus.eHLC_STATE_OPERATIONAL) THEN
+		NextState := ePrimeMoverState.eMMSendResetCmd;		
+	END_IF	
+
+ePrimeMoverState.eMMSendResetCmd:
+Status.PrimeMoverStatusMsg := 'MM: Reseting Path';
+	Stations.fbMMSendMsg.M_CmdResetPath();
+	ResetCmdStatus := eMM_ResetCmdStatus.eMM_ResetCmdSent;
+	NextState := ePrimeMoverState.eMMWaitAccceptResetCmd;
+
+ePrimeMoverState.eMMWaitAccceptResetCmd:
+Status.PrimeMoverStatusMsg := 'MM: Waiting Reset Path ACK';
+	IF (ResetCmdStatus = eMM_ResetCmdStatus.eMM_ResetCmdAck) THEN
+		NextState := ePrimeMoverState.eMMWaitCmplResetCmd;			
+	END_IF	
+
+ePrimeMoverState.eMMWaitCmplResetCmd:
+Status.PrimeMoverStatusMsg := 'MM: Waiting Reset Cmpl';
+IF (ResetCmdStatus = eMM_ResetCmdStatus.eMM_ResetCmdComplete) THEN
+		NextState := ePrimeMoverState.eMMSendStartupCmd;			
+	END_IF
+
+ePrimeMoverState.eMMSendStartupCmd:
+Status.PrimeMoverStatusMsg := 'MM: Starting Up Path';
+	Stations.fbMMSendMsg.M_CmdStartupPath();
+	StartupCmdStatus := eMM_StartupCmdStatus.eMM_StartupCmdSent;
+	NextState := ePrimeMoverState.eMMWaitAcceptStartupCmd;	
+
+ePrimeMoverState.eMMWaitAcceptStartupCmd:
+Status.PrimeMoverStatusMsg := 'MM: Waiting Startup ACK';
+	IF (StartupCmdStatus = eMM_StartupCmdStatus.eMM_StartupCmdAck) THEN
+		NextState := ePrimeMoverState.eMMWaitCmplStartupCmd;			
+	END_IF		
+
+ePrimeMoverState.eMMWaitCmplStartupCmd:
+Status.PrimeMoverStatusMsg := 'MM: Waiting Startup CMPL';
+	IF (StartupCmdStatus = eMM_StartupCmdStatus.eMM_StartupCmdComplete) THEN
+		NextState := ePrimeMoverState.eMMWaitCycleControlTrigger;
+	END_IF
+	
+ePrimeMoverState.eMMWaitCycleControlTrigger:
+Status.PrimeMoverStatusMsg := 'MM: Waiting Till Safe to Index';
+	IF (Trigger) THEN              //Trigger is Sent By Cycle Controller
+			//NextState := ePrimeMoverState.eMMSendAllVehiclesToInitPosCmd;     
+		GVL_IO.MM_YEnableMagneMotion := TRUE;
+		NextState := ePrimeMoverState.eMMReadyAutoRun;     
+        Trigger := FALSE;      	
+	END_IF
+
+ePrimeMoverState.eMMSendAllVehiclesToInitPosCmd:
+   Trigger := FALSE;	
+   FOR COUNTER := 1 TO MM_CONST.MAX_VEHICLES BY 1 DO
+		Stations.fbMMSendMsg.M_CmdVehToPos(VehicleID:= COUNTER, Flags :=1, Pos := MM_CONST.GOOD_UNLOAD_POS -((COUNTER-1)* (MM_CONST.Vehicle_Length+MM_CONST.MinGapInterVehStationary)/1000), Acc := 2.0, Vel := 2.0);
+		NextState := ePrimeMoverState.eMMWaitCmplAllVehiclesAtInitPos;
+	END_FOR
+		
+ePrimeMoverState.eMMWaitCmplAllVehiclesAtInitPos:
+	VehicleInitMoveTimer(IN:=TRUE,PT:=T#3S);
+	IF (VehicleInitMoveTimer.Q) THEN
+		bAllVehStopped := TRUE;			
+		FOR COUNTER := 1 TO MM_CONST.MAX_VEHICLES BY 1 DO
+			Stations.fbVehicleManager[COUNTER].VehIdle := TRUE;	
+			IF (STATUS.MMVehiclesStatus[COUNTER].Velocity > 0.1) THEN //maybe get vehicle stopped by reading flags instead
+				  bAllVehStopped :=FALSE;
+				  Stations.fbVehicleManager[COUNTER].VehIdle := FALSE; // this additional variable helps for debug
+			END_IF
+		END_FOR
+		IF (bAllVehStopped) THEN
+			NextState := ePrimeMoverState.eMMReadyAutoRun;
+			VehicleInitMoveTimer(IN:=FALSE);
+		END_IF	
+	END_IF 
+
+ePrimeMoverState.eMMReadyAutoRun:
+//to do handle all exceptions here 
+// according to pg. 53 of 210 of MM TCP/IP manual
+// When Host Controller wants to issue E-STOP, then first let all the motion come to a stop
+// Then issue a Suspend Movement
+// Then remove bus power
+
+//To recover from E-STOP
+// Enable Bus Power, wait
+// Then issue Resume Movement...
+Status.PrimeMoverStatusMsg := 'MM: Auto Run';
+	IF (GVL_IO.MachineEStopped OR NOT GVL_IO.MC_XAirPressureOK) THEN 
+	   SuspendAfterESTOPTimer(IN:=TRUE, PT:= T#2.5S);
+	   IF (SuspendAfterESTOPTimer.Q) THEN
+		   NextState := ePrimeMoverState.eMMSuspendMovement;
+		   SuspendAfterESTOPTimer(IN:=FALSE);
+       END_IF		
+	ELSE
+		SuspendAfterESTOPTimer(IN:=FALSE);
+	END_IF
+
+IF (Stations.fbMMMonitor.IsMMJammed) THEN 
+	Status.PrimeMoverStatusMsg := 'MM: Jammed';
+END_IF
+
+ePrimeMoverState.eMMSuspendMovement:
+	IF (bFirst) THEN 
+		//Stations.fbMMSendMsg.M_CmdSuspendMov();  //Suspend command is causing more problems as it rejects commands from vehicles for movement
+	END_IF
+	SuspendAfterESTOPTimer(IN:=TRUE,PT:=T#5S);
+	IF (SuspendAfterESTOPTimer.Q) THEN
+		NextState := ePrimeMoverState.eMMESTOP;		
+		SuspendAfterESTOPTimer(IN:=FALSE);
+		WaitAfterESTOPTimer(IN:=FALSE);
+	END_IF
+
+ePrimeMoverState.eMMESTOP:
+Status.PrimeMoverStatusMsg := 'MM: E-STOPPED';
+	GVL_IO.MM_YEnableMagneMotion := FALSE;
+   IF (Stations.fbCycleControl.AllowPrimeMoverEnable) THEN // wait for cycle control to tell us we are ready to move
+		WaitAfterESTOPTimer(IN:=TRUE, PT:=T#5S);
+		GVL_IO.MM_YEnableMagneMotion := TRUE; // Enable Magnemotion D.C. Bus and let all the vehicles move
+		IF (WaitAfterESTOPTimer.Q) THEN
+			//Stations.fbMMSendMsg.M_CmdResumeMov(); // let all the vehicles move
+			WaitAfterESTOPTimer(IN:=FALSE);
+			NextState := ePrimeMoverState.eMMReadyAutoRun;
+		END_IF
+       	   
+	END_IF
+
+ePrimeMoverState.eMMResumeMovement:
+
+ePrimeMoverState.eMMError:
+// to do handle all exceptions here
+
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+	StateTimer(IN:=FALSE);
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+
+AssignStationStatusForHMI();]]></ST>
+    </Implementation>
+    <Property Name="StartupCmdState" Id="{23cd86a3-bd49-4cbb-a2ac-9122c59f08d4}">
+      <Declaration><![CDATA[PROPERTY PUBLIC StartupCmdState : eMM_StartupCmdStatus]]></Declaration>
+      <Set Name="Set" Id="{49b0249a-2764-457c-b6a8-ace7b8a0302e}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[StartupCmdStatus := StartupCmdState;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="WaitingForHomingTrigger" Id="{26104037-e251-43f5-a802-bd12c8197511}">
+      <Declaration><![CDATA[PROPERTY PUBLIC WaitingForHomingTrigger : BOOL]]></Declaration>
+      <Get Name="Get" Id="{62f2adab-4457-4c2f-b1c3-a7ba3ee3de07}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[WaitingForHomingTrigger := (StartupCmdStatus = eMM_StartupCmdStatus.eMM_StartupCmdComplete) AND (State = ePrimeMoverState.eMMWaitCycleControlTrigger); ]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="ResetPrimeMoverAndPurge" Id="{430726ef-3108-4b40-98fd-582ebd3a1043}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetPrimeMoverAndPurge : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[State := ePrimeMoverState.eMMUnknown;
+NextState := ePrimeMoverState.eMMUnknown;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="ResetCmdState" Id="{5c206f17-0fc6-46ea-862b-b789487208ea}">
+      <Declaration><![CDATA[PROPERTY PUBLIC ResetCmdState : eMM_ResetCmdStatus]]></Declaration>
+      <Set Name="Set" Id="{bc6198e0-49a8-47e5-9938-bb9a4bdbd791}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[ResetCmdStatus := ResetCmdState;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="AssignStationStatusForHMI" Id="{65c390ee-5dcf-40eb-89cf-8e5e9ecffa71}">
+      <Declaration><![CDATA[METHOD PUBLIC AssignStationStatusForHMI : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.StationsState[MM_CONST.PRIME_MOVER_HMI_STATE] := State;
+CASE State OF 
+	ePrimeMoverState.eMMUnknown,ePrimeMoverState.eMMError:
+	Status.StationStauts[MM_CONST.PRIME_MOVER_HMI_STATE] := OverallStationStatus.eError;
+	
+    ePrimeMoverState.eMMConnect,
+	ePrimeMoverState.eMMCheckStatus,
+	ePrimeMoverState.eMMSendResetCmd,
+	ePrimeMoverState.eMMWaitAccceptResetCmd,
+	ePrimeMoverState.eMMWaitCmplResetCmd,
+	ePrimeMoverState.eMMSendStartupCmd,
+	ePrimeMoverState.eMMWaitAcceptStartupCmd,
+	ePrimeMoverState.eMMWaitCmplStartupCmd:
+		Status.StationStauts[MM_CONST.PRIME_MOVER_HMI_STATE] := OverallStationStatus.eHoming;
+	
+	ePrimeMoverState.eMMWaitCycleControlTrigger:
+        Status.StationStauts[MM_CONST.PRIME_MOVER_HMI_STATE] := OverallStationStatus.eWarning;
+		
+	ePrimeMoverState.eMMSendAllVehiclesToInitPosCmd,
+	ePrimeMoverState.eMMWaitCmplAllVehiclesAtInitPos,	
+    ePrimeMoverState.eMMReadyAutoRun:
+	    IF (Stations.fbCycleControl.AllowPrimeMoverEnable) THEN
+        	Status.StationStauts[MM_CONST.PRIME_MOVER_HMI_STATE] := OverallStationStatus.eRunning;
+		ELSE 
+			Status.StationStauts[MM_CONST.PRIME_MOVER_HMI_STATE] := OverallStationStatus.eCycleStop;
+		END_IF
+		
+		IF (Stations.fbMMMonitor.IsMMJammed) THEN 
+	        Status.StationStauts[MM_CONST.PRIME_MOVER_HMI_STATE] := OverallStationStatus.eError;
+        END_IF
+	    
+		
+	ELSE;	
+END_CASE
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="HLCState" Id="{6a44f0dd-df77-41ed-889a-35f92f729c5a}">
+      <Declaration><![CDATA[PROPERTY PUBLIC HLCState : eMM_HLCStatus]]></Declaration>
+      <Set Name="Set" Id="{0db2864b-2ba6-4dfc-8d52-37d1733c976c}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[HLCStatus := HLCState;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="Ready" Id="{72162aa8-033a-416a-8bd0-fb0fd921e20a}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{7c1fad20-37ba-46f0-8ece-744e5be1296e}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Ready := (State = ePrimeMoverState.eMMReadyAutoRun);]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="TriggerAction" Id="{ccbc6a9e-7f24-4bc6-9d3c-7574610f7de6}">
+      <Declaration><![CDATA[PROPERTY PUBLIC TriggerAction : BOOL]]></Declaration>
+      <Set Name="Set" Id="{d8b18937-481d-41e7-a6ab-a1466e5d9194}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Trigger := TriggerAction;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="PrimeMover">
+      <LineId Id="643" Count="169" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="PrimeMover.StartupCmdState.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="PrimeMover.WaitingForHomingTrigger.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="PrimeMover.ResetPrimeMoverAndPurge">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="PrimeMover.ResetCmdState.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="PrimeMover.AssignStationStatusForHMI">
+      <LineId Id="49" Count="33" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="PrimeMover.HLCState.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="PrimeMover.Ready.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="PrimeMover.TriggerAction.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

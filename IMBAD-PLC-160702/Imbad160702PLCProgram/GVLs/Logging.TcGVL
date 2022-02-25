@@ -1,0 +1,107 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <GVL Name="Logging" Id="{8de69f6c-34c2-4cdf-b4e1-c5827cd8213f}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+	fbEventMsg : EventMsg;
+	fbEventMsgParams : EventMsgParams;
+	fbCurrTime : FB_LocalSystemTime := (bEnable := TRUE, dwCycle := 1);
+END_VAR
+
+VAR_GLOBAL CONSTANT   //Source Constants
+	SrcMainPOU 		:UDINT := 1000;
+	SrcLoadPOU		:UDINT := 2000;
+	SrcVisionPOU	:UDINT := 3000;
+	SrcPistonPOU 	:UDINT := 4000;
+	SrcCapPOU 		:UDINT := 5000;
+	SrcGoodULPOU 	:UDINT := 6000;
+	SrcRejectPOU 	:UDINT := 7000;
+	SrcBaggerPOU 	:UDINT := 8000;
+	SrcMMPOU 		:UDINT := 9000;	
+	SrcCyclePOU		:UDINT := 10000;
+END_VAR
+
+VAR_GLOBAL CONSTANT   //ID Constants
+	
+
+
+	// Main
+	IDMain_InitBegin : UDINT := 1;
+	IDMain_InitCmpl  : UDINT := 2;
+	IDMain_Tick		 : UDINT := 3;
+	IDMain_IOLocked  : UDINT := 4;
+	
+	//Load
+	
+	//Vision
+	
+	//Piston Insert
+	// Reserved 1-50 ID for state machine states to be sent 
+	ID_PI_Unknown 						: UDINT:=51;
+	ID_PI_MtrReset 						: UDINT:=52;
+	ID_PI_MtrEnabled					: UDINT:=53;
+	ID_PI_MtrCheckEnabled 				: UDINT:=54;
+	ID_PI_MtrCheckHome					: UDINT:=55;
+	ID_PI_MtrCheckHomePos				: UDINT:=56;
+	ID_PI_CheckCylinders 				: UDINT:=57;
+	ID_PI_CheckEscapeCylinders	 		: UDINT:=58;
+	ID_PI_WaitPiston 					: UDINT:=59;
+	ID_PI_WaitVehicle 					: UDINT:=60;
+	ID_PI_MtrWaitMoveStart 				: UDINT:=61;
+	ID_PI_MtrWaitMoveCmpl 				: UDINT:=62;
+	
+	// Cap Insert 
+	// Reserved 1-50 ID for state machine states to be sent 
+	ID_CP_Unknown 						: UDINT:=51;
+	ID_CP_MtrReset 						: UDINT:=52;
+	ID_CP_MtrEnabled					: UDINT:=53;
+	ID_CP_MtrCheckEnabled 				: UDINT:=54;
+	ID_CP_MtrCheckHome					: UDINT:=55;
+	ID_CP_AllCheckHome					: UDINT:=56;
+	ID_CP_CheckCylinders 				: UDINT:=57;
+	ID_CP_CheckEscapeCylinders	 		: UDINT:=58;
+	ID_CP_WaitCap	 					: UDINT:=59;
+	ID_CP_WaitVehicle 					: UDINT:=60;
+	ID_CP_MtrWaitCapPickCmpl			: UDINT:=61;
+	ID_CP_MtrWaitCapInsertCmpl			: UDINT:=62;
+	ID_CP_MtrWaitReturnHomeCmpl			: UDINT:=62;
+	
+	//Good Unload 
+	// Reserved 1-50 ID for state machine states to be sent 
+	ID_UL_Unknown 						: UDINT:=51;
+	ID_UL_PPReset 						: UDINT:=52;
+	ID_UL_PPEnabled						: UDINT:=53;
+	ID_UL_PPCheckEnabled 				: UDINT:=54;
+	ID_UL_PPCheckHome					: UDINT:=55;	
+	ID_UL_PPWaitMoveCmpl				: UDINT:=56;
+	ID_UL_PPReady						: UDINT:=57;
+	ID_UL_AllCheckHome					: UDINT:=61;
+	ID_UL_CheckCylinders 				: UDINT:=62;
+	ID_UL_CheckGrippers			 		: UDINT:=63;
+	ID_UL_WaitVehicle 					: UDINT:=64;
+	
+    //Reject Station
+		// Reserved 1-50 ID for state machine states to be sent 
+	ID_RJ_Unknown 						: UDINT:=51;
+	ID_RJ_CheckCylinders 				: UDINT:=52;
+	ID_RJ_WaitVehicle 					: UDINT:=53;	
+	
+	//Load Station
+	ID_LD_Unknown 						: UDINT:=51;
+	ID_LD_CheckCylinders 				: UDINT:=52;
+	ID_LD_WaitVehicle 					: UDINT:=53;	
+	
+	//Primve Mover
+	ID_MM_Unknown 						: UDINT:=51;
+	
+	//Cycle Control
+	ID_CY_Unknown 						: UDINT:=51;
+	
+	
+	//Vision Station
+	ID_VS_Unknown						: UDINT:=51;
+	ID_VS_CmdProcessNotReady			: UDINT:=52;
+	
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

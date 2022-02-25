@@ -1,0 +1,57 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.3">
+  <DUT Name="eGoodULStaState" Id="{2699ddd0-c9d6-460b-a794-fdb80966f452}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eGoodULStaState :
+( 
+	eUnknown :=151,
+    eInit,
+	eHoming,
+	eHPReset,
+	eHPCheckEnabled,
+	eHPSendHome,
+	eHPHomed,
+	eHPSendToInitLoc,
+	eHPAtInitLoc,
+	eHPReady,
+	eDisabledReady,
+    eWaitForVehicleTrigger,
+	eDetermineDropLocation,
+	eDwell,
+	eAbandonCycle,
+	eEngagePalletHoldDown,
+	ePalletHoldDownEngaged,
+	ePalletReleaseExtend,
+	ePalletReleaseExtended,
+    eWaitForHPInitLocAndRotaryCenter,	
+	eHPMoveToPickFromTrack,
+	eHPAtPickFromTrack,
+	eHPCloseGrippers,
+	eHPGrippersClosed,
+	eHPSendToInitLocNext,
+	eHPAtInitLocNext,
+	eReleasePalletHoldDown,
+	ePalletHoldDownReleased,	
+	eHPMoveToPlaceInBagLoc1,
+	eHPMoveToPlaceInBagLoc2,
+	eHPAtPlaceinBagLoc1,
+	eHPAtPlaceinBagLoc2,
+	eDepartVehicle,
+	eTurnToRotartyCorrectSide,
+	eAtCorrectRotaryLoc,
+	eHPOpenGrippers,
+	eHPGrippersOpen,	
+	eMoveRotaryRight,
+	eCheckRotaryAtRight,		
+	eHPSendToInitLocAfterDrop,	
+    eHPAtInitLocAfterDrop,
+	eHPMoveToRotaryCenter,
+	eHPAtRotaryCenter,	
+	eStopActive,
+	eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

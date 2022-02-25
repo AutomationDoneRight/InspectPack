@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <Task Name="SerialComTask" Id="{7f3aa07d-b8c6-499c-a500-50cce8d63084}">
+    <!--CycleTime in micro seconds.-->
+    <CycleTime>1000</CycleTime>
+    <Priority>16</Priority>
+    <PouCall>
+      <Name>BackgroundEL</Name>
+    </PouCall>
+    <TaskFBGuid>{73427494-ddcb-477b-972f-816b12ed308d}</TaskFBGuid>
+    <Fb_init>{846ac4cd-8612-4faa-bfef-af21c9ce5782}</Fb_init>
+    <Fb_exit>{716882ab-36f8-4095-bcae-222c402e4d7c}</Fb_exit>
+    <CycleUpdate>{014077da-a968-4135-bfdf-e28144671492}</CycleUpdate>
+    <PostCycleUpdate>{ae31d1fa-086f-490d-bf9d-b446d995c9d4}</PostCycleUpdate>
+  </Task>
+</TcPlcObject>

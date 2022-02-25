@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="StatusCounts" Id="{fd0d4a3e-e8b9-4c24-8f16-5808d52d55cf}">
+    <Declaration><![CDATA[TYPE StatusCounts :
+STRUCT
+	PremiumCount: DINT;
+	GoodCount: DINT;
+	BadCount: DINT;
+	TotalCount : DINT; //can be also obtained from the above, but keeping it for ease of use
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

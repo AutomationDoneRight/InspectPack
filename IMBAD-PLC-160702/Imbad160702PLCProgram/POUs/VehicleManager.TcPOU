@@ -1,0 +1,214 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="VehicleManager" Id="{c5bc16cb-8a55-4ee1-9986-d239b574ac96}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC VehicleManager
+VAR_INPUT
+	VehicleID		: BYTE;
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	
+    State 			: eMM_VehicleState := eMM_VehicleState.eVehIdle;
+	NextState		: eMM_VehicleState := eMM_VehicleState.eVehIdle;
+	NextPos			: REAL := MM_CONST.REJECT_ULOAD_POS;
+	NextVel			: REAL := 2.0;
+	NextAcc			: REAL := 2.0;
+	NextStaIndex	: BYTE := MM_CONST.REJECT_ULOAD_STA;
+	CurrStaIndex	: BYTE := MM_CONST.REJECT_ULOAD_STA;
+	cmdAck			: BOOL := FALSE;
+	cmdCmpl			: BOOL := FALSE;
+	TriggerMove		: BOOL := FALSE;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[CASE State OF 
+	eMM_VehicleState.eVehIdle: //Set Next Move Parameters and then trigger move
+	IF (TriggerMove) THEN
+		NextState := eMM_VehicleState.eVehMoveCmd_Send;
+		TriggerMove := FALSE;
+	END_IF
+		
+	eMM_VehicleState.eVehMoveCmd_Send:	
+	    Stations.fbMMSendMsg.M_CmdVehToPos(VehicleID:=VehicleID,Flags:=1,Pos:=NextPos,Acc:=NextAcc,Vel:=NextVel);
+		cmdAck := FALSE;
+		cmdCmpl := FALSE;
+		NextState:= eMM_VehicleState.eVehMoveCmd_WaitAccept; 	
+	eMM_VehicleState.eVehMoveCmd_WaitAccept:
+		IF (cmdAck) THEN                           //handle cases for timed out here
+			NextState := eMM_VehicleState.eVehMoveCmd_WaitCompl;	
+            cmdAck := FALSE;		
+		END_IF		
+	eMM_VehicleState.eVehMoveCmd_WaitCompl:
+		IF (cmdCmpl) THEN                         // handle cases for timed out here 
+			NextState := eMM_VehicleState.eVehMoveCmd_Compl;
+            cmdCmpl := FALSE; 		
+		END_IF
+	
+	eMM_VehicleState.eVehMoveCmd_Reject:
+	
+    eMM_VehicleState.eVehMoveCmd_Compl:
+		NextState := eMM_VehicleState.eVehIdle;
+		Stations.fbStationManager.NotifyStationNewVehArrival(Pos:= NextPos, StationIndex:= NextStaIndex, VehicleID:= VehicleID);		
+		CurrStaIndex := NextStaIndex;
+		
+	eMM_VehicleState.eVehMoveTimeOut:
+	
+    eMM_VehicleState.eError:
+	ELSE
+	;		
+END_CASE
+State := NextState;]]></ST>
+    </Implementation>
+    <Method Name="M_SetNextMoveParams" Id="{aa3d2106-ddbf-461f-b6ab-4fa8d8c7c8bd}">
+      <Declaration><![CDATA[METHOD PUBLIC M_SetNextMoveParams : BOOL
+VAR_INPUT
+	Pos :REAL;
+	Vel :REAL;
+	Acc :REAL;
+	StationIndex :BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[NextPos := Pos;
+NextVel	:= Vel;
+NextAcc	:= Acc;
+NextStaIndex := StationIndex;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="MoveCmdAccepted" Id="{5368d58c-212d-48f0-9779-f2734980aab8}">
+      <Declaration><![CDATA[PROPERTY PUBLIC MoveCmdAccepted : BOOL]]></Declaration>
+      <Set Name="Set" Id="{15a77724-1405-43a3-9ec7-3fc7625d857c}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[cmdAck := MoveCmdAccepted;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="MoveCmdCmpl" Id="{163e373d-83c9-4549-9306-d0cabf18cd23}">
+      <Declaration><![CDATA[PROPERTY PUBLIC MoveCmdCmpl : BOOL]]></Declaration>
+      <Set Name="Set" Id="{ed25463d-fbcd-46d3-ab99-99114ae299e9}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[cmdCmpl := MoveCmdCmpl; ]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="ResetVehicleManager" Id="{ede2e95f-cc15-40a2-a700-14bcc1598ff4}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetVehicleManager : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[    State 			 := eMM_VehicleState.eVehIdle;
+	NextState		 := eMM_VehicleState.eVehIdle;
+	NextPos			 := MM_CONST.REJECT_ULOAD_POS;
+	NextVel			 := 2.0;
+	NextAcc			 := 2.0;
+	NextStaIndex	 := MM_CONST.REJECT_ULOAD_STA;
+	CurrStaIndex	 := MM_CONST.REJECT_ULOAD_STA;
+	cmdAck			 := FALSE;
+	cmdCmpl			 := FALSE;
+	TriggerMove		 := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ResetVehicleManagerState" Id="{57a1256f-54cc-4910-bcc1-82a0d8783173}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetVehicleManagerState : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[State := eMM_VehicleState.eVehIdle;
+NextState := eMM_VehicleState.eVehIdle;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="TriggerVehMov" Id="{25983d38-9d9d-481b-b816-fba4635e5311}">
+      <Declaration><![CDATA[PROPERTY PUBLIC TriggerVehMov : BOOL]]></Declaration>
+      <Set Name="Set" Id="{ee68445b-b589-45e0-a88c-50b95ae03e3f}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[TriggerMove := TriggerVehMov;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="VehIdle" Id="{1fd305b8-67ce-4118-aa79-c4f1af3fb6e3}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehIdle : BOOL]]></Declaration>
+      <Get Name="Get" Id="{7ca0cbb9-f649-4053-ac40-9b284ee59069}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehIdle := (State=eMM_VehicleState.eVehIdle);]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{8d1b95b2-5d59-4246-ada8-4748e93151b4}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[State:=eMM_VehicleState.eVehIdle;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="VehicleManager">
+      <LineId Id="12" Count="1" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="48" Count="1" />
+      <LineId Id="14" Count="1" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="20" Count="2" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="23" Count="3" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="27" Count="1" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="36" Count="3" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="VehicleManager.M_SetNextMoveParams">
+      <LineId Id="10" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="VehicleManager.MoveCmdAccepted.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="VehicleManager.MoveCmdCmpl.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="VehicleManager.ResetVehicleManager">
+      <LineId Id="6" Count="8" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="VehicleManager.ResetVehicleManagerState">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="VehicleManager.TriggerVehMov.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="VehicleManager.VehIdle.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="VehicleManager.VehIdle.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

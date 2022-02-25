@@ -1,0 +1,543 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="RejectStation" Id="{1c7d3c10-2e05-4827-bb38-6a50101bbab4}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC RejectStation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : eRejectStaState := eRejectStaState.eUnknown;
+	NextState : eRejectStaState := eRejectStaState.eUnknown;
+	ErrorReturnState : eRejectStaState := eRejectStaState.eUnknown;
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;
+	StateTimer : TON;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (GVL_IO.MachineEStopped) THEN 
+	State := eRejectStaState.eUnknown;
+	NextState := eRejectStaState.eUnknown;
+	Status.RejectStatusMsg:= 'RejectSta Unknown, Check AIR, E-STOP and Hit Start';
+END_IF
+
+CASE State OF
+eRejectStaState.eUnknown:
+	Status.RejectStatusMsg:= 'RejectSta Unknown, Check AIR, E-STOP and Hit Start';
+    IF (GVL_IO.MC_XStartPB AND GVL_IO.MC_XAirPressureOK AND GVL_IO.MC_NotEStopped) THEN // wait for start button when powered up or PLC program restarted
+		NextState := eRejectStaState.eInit;	   
+	END_IF
+    
+
+eRejectStaState.eInit:
+    Act_KnockPartOFF();
+	Act_FreePalletHoldDown();
+	ResetDwellTimer();
+	NextState := eRejectStaState.eHoming;
+	
+
+eRejectStaState.eHoming:
+	IF (IsPalletHoldDownFree()) THEN 
+         NextState := eRejectStaState.eReady;
+	  END_IF
+     DwellTimer(IN:=TRUE, PT:= T#10S);
+     IF (DwellTimer.Q) THEN
+		 ResetDwellTimer();
+		 ErrorReturnState:= eRejectStaState.eInit;
+		 NextState := eRejectStaState.eError;		 
+	 END_IF	
+
+eRejectStaState.eReady:
+	IF (xTrigger) THEN
+		NextState := eRejectStaState.eSendPalletHoldDownExtend;		
+		ResetDwellTimer();
+	END_IF
+
+eRejectStaState.eSendPalletHoldDownExtend:
+	Act_EngagePalletHoldDown();
+	ResetDwellTimer();
+	NextState := eRejectStaState.eCheckPalletHoldDownExtended;
+	
+eRejectStaState.eCheckPalletHoldDownExtended:
+   DwellTimer(IN:=TRUE, PT:= T#10S);	
+   IF (IsPalletHoldDownEngaged()) THEN
+        ResetDwellTimer();	   
+		IF(GVL_IO.RJ_XPartPresent OR TRUE) THEN         //added Turnkey shop sensor not adjusted
+			NextState := eRejectStaState.eKnockOffPart;
+			ResetDwellTimer();
+        ELSE
+			NextState := eRejectStaState.ePalletHoldDownRelease;	
+		END_IF        
+   END_IF      
+   IF (DwellTimer.Q) THEN
+		 ResetDwellTimer();
+		 ErrorReturnState:= eRejectStaState.eSendPalletHoldDownExtend;
+		 NextState := eRejectStaState.eError;		 
+	END_IF
+  
+eRejectStaState.eKnockoffPart:
+	Act_KnockPartON();
+	UpdateLotData();
+	UpdatePartData();
+    DwellTimer(IN:=TRUE, PT:= T#250MS);
+    IF (DwellTimer.Q) THEN 
+		NextState := eRejectStaState.eCheckPartKnockedOff;
+		ResetDwellTimer();
+	END_IF;
+
+eRejectStaState.eCheckPartKnockedOff:
+   IF (NOT(GVL_IO.RJ_XPartPresent) ) THEN   /// until Bonnie can ajust sensor
+	   NextState := eRejectStaState.ePalletHoldDownRelease;
+	   DwellTimer(IN:=FALSE);
+	   StateTimer(IN:=FALSE);
+   END_IF
+   DwellTimer(IN:= TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eRejectStaState.eCheckPartKnockedOff;
+	   Status.RejectStatusMsg:= 'Reject Remove Part then Hit START';
+   	   NextState := eRejectStaState.eError;	
+   END_IF   
+
+eRejectStaState.ePalletHoldDownRelease:
+    Act_KnockPartOFF();
+	Act_FreePalletHoldDown();
+    ResetDwellTimer();	
+	NextState := eRejectStaState.ePalletHoldDownReleased;
+
+eRejectStaState.ePalletHoldDownReleased:	
+	IF (IsPalletHoldDownFree()) THEN         
+	    NextState := eRejectStaState.eDepart;
+    END_IF
+	
+   DwellTimer(IN:= TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eRejectStaState.ePalletHoldDownRelease;	   
+   	   NextState := eRejectStaState.eError;	
+   END_IF  
+	
+	
+eRejectStaState.eDepart:
+    Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.REJECT_ULOAD_STA, VehicleID := VUT);
+	xTrigger := FALSE;
+	IF (Stations.fbCycleControl.StopRequested) THEN
+		NextState := eRejectStaState.eStopActive;
+	ELSE 
+		NextState := eRejectStaState.eReady;
+    END_IF
+	
+eRejectStaState.eStopActive:
+	IF (NOT Stations.fbCycleControl.StopRequested) THEN
+		NextState := eRejectStaState.eReady;
+    END_IF
+	
+
+eRejectStaState.eError:
+	IF (GVL_IO.MC_XStartPB) THEN
+		NextState := ErrorReturnState;
+		ErrorReturnState := eRejectStaState.eUnknown;
+	END_IF
+
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+	StateTimer(IN:=FALSE);
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+AssignStationStatusForHMI();]]></ST>
+    </Implementation>
+    <Action Name="Act_EngagePalletHoldDown" Id="{3f30117c-5e6e-48a8-b3a1-5e4bdf95c3b8}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.RJ_YPalletHoldDownExtend_Home  := FALSE;
+GVL_IO.RJ_YPalletHoldDownRetract_Engage := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_FreePalletHoldDown" Id="{31d36249-0615-4b2f-8d93-d911987274cd}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.RJ_YPalletHoldDownExtend_Home := TRUE;
+GVL_IO.RJ_YPalletHoldDownRetract_Engage := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_KnockPartOFF" Id="{0dd1b6cc-028c-4568-86b1-43e1daf5b4c5}">
+      <Implementation>
+        <ST><![CDATA[	GVL_IO.RJ_YRejectPushExtend := FALSE;
+	GVL_IO.RJ_YRejectPushRetract := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_KnockPartON" Id="{bbe591a0-cc44-44b8-88ed-b7df52180766}">
+      <Implementation>
+        <ST><![CDATA[	GVL_IO.RJ_YRejectPushExtend := TRUE;
+	GVL_IO.RJ_YRejectPushRetract := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="AssignStationStatusForHMI" Id="{9daeb57e-5015-4a77-b83a-e539e06cc06a}">
+      <Declaration><![CDATA[METHOD PUBLIC AssignStationStatusForHMI : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.StationsState[MM_CONST.REJECT_ULOAD_STA_HMI_STATE] := State;
+IF (NOT LotsData.Lot.RejectUnloadEnabled) THEN
+	Status.StationStauts[MM_CONST.REJECT_ULOAD_STA_HMI_STATE] := OverallStationStatus.eDisabled;
+ELSE 
+	CASE State OF 
+	
+	eRejectStaState.eUnknown,eRejectStaState.eError:
+		Status.StationStauts[MM_CONST.REJECT_ULOAD_STA_HMI_STATE] := OverallStationStatus.eError;
+		
+    eRejectStaState.eInit,
+	eRejectStaState.eHoming:
+	    Status.StationStauts[MM_CONST.REJECT_ULOAD_STA_HMI_STATE] := OverallStationStatus.eHoming;
+	
+	eRejectStaState.eReady,eRejectStaState.eWaitForVehicleTrigger:
+	     Status.StationStauts[MM_CONST.REJECT_ULOAD_STA_HMI_STATE] := OverallStationStatus.eWaitingForParts;
+		 
+	eRejectStaState.eDwell,
+	eRejectStaState.eSendPalletHoldDownExtend,
+	eRejectStaState.eCheckPalletHoldDownExtended,
+	eRejectStaState.ePalletReleaseExtend,
+	eRejectStaState.ePalletReleaseExtended,
+	eRejectStaState.eKnockoffPart,
+	eRejectStaState.eKnockoffExtended,
+	eRejectStaState.eCheckPartKnockedOff,
+	eRejectStaState.ePalletHoldDownRelease,
+	eRejectStaState.ePalletHoldDownReleased:
+	    Status.StationStauts[MM_CONST.REJECT_ULOAD_STA_HMI_STATE] := OverallStationStatus.eRunning;
+	
+	eRejectStaState.eStopActive:
+	    Status.StationStauts[MM_CONST.REJECT_ULOAD_STA_HMI_STATE] := OverallStationStatus.eCycleStop;
+    	
+	
+    ELSE;	
+	END_CASE
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearVehicleTrigger" Id="{976b5edd-4b06-4989-a8bc-6ca4b3cd4f57}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsFaulted" Id="{d3043999-8417-49a5-b283-6c2328820a8c}">
+      <Declaration><![CDATA[METHOD PUBLIC IsFaulted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsFaulted := (State = eRejectStaState.eUnknown OR State = eRejectStaState.eError);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownEngaged" Id="{a11e39c7-24b4-48ba-8798-808616fedafe}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownEngaged : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownEngaged := (GVL_IO.RJ_XPalletHoldDownRetracted_Engaged AND NOT GVL_IO.RJ_XPalletHoldDownExtended_Home);
+IF (NOT IsPalletHoldDownEngaged) THEN
+	Status.RejectStatusMsg:= 'Reject: Check Pallet Hold Down Sensors and then hit START';
+END_IF ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownFree" Id="{63e2664c-f6cb-45b3-9777-3cb53c2f81e3}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownFree : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownFree := (NOT GVL_IO.RJ_XPalletHoldDownRetracted_Engaged AND GVL_IO.RJ_XPalletHoldDownExtended_Home);
+IF (NOT IsPalletHoldDownFree) THEN
+	Status.RejectStatusMsg:= 'Reject: Check Pallet Hold Down Sensors and then hit START';
+END_IF ]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Ready" Id="{e36dc20c-e8de-419a-9137-4af11dd3af4e}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{35b042ee-ce62-4e99-b7a2-97e5b91ab954}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Ready := (State = eRejectStaState.eReady);]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Action Name="ResetDwellTimer" Id="{ebefa544-ef12-4966-9806-2e0b5908407f}">
+      <Implementation>
+        <ST><![CDATA[DwellTimer(IN:=FALSE);]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="ResetState" Id="{9f7b9e0a-4ac5-4c94-9069-f97240cf99ca}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetState : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[State := eRejectStaState.eUnknown;
+NextState := eRejectStaState.eUnknown;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Trigger" Id="{47817a75-f5a0-4907-8635-da34a5b57ff9}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{5ef6f9b5-5847-4fc5-ac2e-197e7eb892a4}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="UpdateLotData" Id="{c1f12ee8-8147-4650-9883-b6863bf398be}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdateLotData : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (PartsData.Status[VUT].OverallStatus <> ePartStatus.eEmpty) THEN
+	LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].BadCount := LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].BadCount +1;
+	LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].TotalCount := LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].TotalCount + 1;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="UpdatePartData" Id="{9d30b08e-a5ef-452c-8b03-271af7fbf7ce}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdatePartData : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[PartsData.Status[VUT].RejectUnloadTime := SYSTEMTIME_TO_STRING(Logging.fbCurrTime.systemTime);
+IF (PartsData.Status[VUT].OverallStatus <> ePartStatus.eEmpty) THEN
+	IF (P_TextModeWrite.CurrWriteStep = 0) THEN (* if resource not ready, we will skip this part*)
+    P_TextModeWrite.VehicleID := VUT;
+	P_TextModeWrite.WriteData := TRUE;
+	END_IF 
+END_IF
+PartsData.Status[VUT].OverallStatus := ePartStatus.eEmpty;
+
+// we will write data to CSV file over here ]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="VehicleUnderTest" Id="{b50b124c-8e38-4d9a-a197-9c352deb6071}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{de905004-ffa8-4240-8f99-7740d1f80dc6}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{7e6b83d6-a21a-48cd-a2cd-76093cb1c9f7}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="RejectStation">
+      <LineId Id="104" Count="1" />
+      <LineId Id="376" Count="0" />
+      <LineId Id="106" Count="1" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="501" Count="0" />
+      <LineId Id="109" Count="1" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="502" Count="2" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="125" Count="0" />
+      <LineId Id="234" Count="0" />
+      <LineId Id="216" Count="0" />
+      <LineId Id="215" Count="0" />
+      <LineId Id="505" Count="1" />
+      <LineId Id="508" Count="0" />
+      <LineId Id="510" Count="0" />
+      <LineId Id="512" Count="0" />
+      <LineId Id="509" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="43" Count="2" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="453" Count="0" />
+      <LineId Id="237" Count="1" />
+      <LineId Id="454" Count="0" />
+      <LineId Id="240" Count="3" />
+      <LineId Id="514" Count="0" />
+      <LineId Id="526" Count="0" />
+      <LineId Id="256" Count="0" />
+      <LineId Id="522" Count="0" />
+      <LineId Id="571" Count="0" />
+      <LineId Id="525" Count="0" />
+      <LineId Id="524" Count="0" />
+      <LineId Id="523" Count="0" />
+      <LineId Id="244" Count="0" />
+      <LineId Id="517" Count="3" />
+      <LineId Id="516" Count="0" />
+      <LineId Id="142" Count="0" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="530" Count="1" />
+      <LineId Id="572" Count="2" />
+      <LineId Id="577" Count="0" />
+      <LineId Id="576" Count="0" />
+      <LineId Id="162" Count="0" />
+      <LineId Id="170" Count="1" />
+      <LineId Id="537" Count="1" />
+      <LineId Id="535" Count="1" />
+      <LineId Id="534" Count="0" />
+      <LineId Id="172" Count="0" />
+      <LineId Id="539" Count="0" />
+      <LineId Id="541" Count="0" />
+      <LineId Id="543" Count="0" />
+      <LineId Id="542" Count="0" />
+      <LineId Id="406" Count="0" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="174" Count="0" />
+      <LineId Id="544" Count="2" />
+      <LineId Id="175" Count="0" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="180" Count="0" />
+      <LineId Id="182" Count="0" />
+      <LineId Id="201" Count="0" />
+      <LineId Id="548" Count="0" />
+      <LineId Id="550" Count="3" />
+      <LineId Id="555" Count="0" />
+      <LineId Id="549" Count="0" />
+      <LineId Id="547" Count="0" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="340" Count="0" />
+      <LineId Id="209" Count="1" />
+      <LineId Id="341" Count="0" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="337" Count="1" />
+      <LineId Id="342" Count="1" />
+      <LineId Id="346" Count="0" />
+      <LineId Id="339" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="481" Count="1" />
+      <LineId Id="484" Count="0" />
+      <LineId Id="483" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="13" Count="2" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="16" Count="4" />
+      <LineId Id="275" Count="1" />
+    </LineIds>
+    <LineIds Name="RejectStation.Act_EngagePalletHoldDown">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.Act_FreePalletHoldDown">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.Act_KnockPartOFF">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.Act_KnockPartON">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.AssignStationStatusForHMI">
+      <LineId Id="6" Count="4" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="33" Count="1" />
+      <LineId Id="17" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="37" Count="1" />
+      <LineId Id="21" Count="9" />
+      <LineId Id="39" Count="1" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.ClearVehicleTrigger">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.IsFaulted">
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.IsPalletHoldDownEngaged">
+      <LineId Id="5" Count="1" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.IsPalletHoldDownFree">
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.Ready.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.ResetDwellTimer">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.ResetState">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.UpdateLotData">
+      <LineId Id="12" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.UpdatePartData">
+      <LineId Id="13" Count="1" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="6" Count="1" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RejectStation.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

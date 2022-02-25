@@ -1,0 +1,49 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <GVL Name="STATUS" Id="{6a9ce2aa-b049-4253-a0a7-d3998e8196d0}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+	MMVehiclesStatus: ARRAY[1..MM_CONST.MAX_VEHICLES] OF ST_VehicleStatus;	(*Vehicle Status unpacked in data structure*)
+	MMVehiclesStatusHMI: ARRAY[1..MM_CONST.MAX_VEHICLES] OF ST_VehicleStatusHMI;	(*Vehicle Status in Byte Array for ADS Comms*)
+	StationsState : ARRAY[1..CONFIG.HMI_STATIONS_NUMB] OF INT;
+	StationStauts : ARRAY[1..CONFIG.HMI_STATIONS_NUMB] OF INT;
+	//StationStatusMsg: ARRAY[1..CONFIG.HMI_STATIONS_NUMB] OF STRING;
+	StationInfoString: ARRAY[1..CONFIG.HMI_STATIONS_NUMB] OF STRING;
+	IonizerStatusMsg:STRING;
+	BurnOffStatusMsg:STRING;
+	VisionStatusMsg:STRING;
+	PistonStatusMsg:STRING;
+	CapStatusMsg:STRING;
+	GoodULStatusMsg:STRING;
+	RejectStatusMsg:STRING;
+	Load1StatusMsg:STRING;
+	PrimeMoverStatusMsg:STRING;
+	AutoBaggerStatusMsg:STRING;
+	GoodUL_1_StatusMsg: STRING;
+	GoodUL_2_StatusMsg: STRING;
+	GoodUL_3_StatusMsg: STRING;
+	GoodUL_4_StatusMsg: STRING;
+	
+	PartStatusHMI: ARRAY[1..MM_CONST.MAX_VEHICLES] OF INT;
+	VisionStatusHMI: ARRAY[1..8] OF INT;
+	BurnOffTemperature :DINT;
+	BurnOffStatus : STRING;
+	BaggerPrintCmd: BYTE;
+	BurnOffIdle : BOOL := FALSE;
+	
+	ErrorMessage :STRING(80); 
+	
+END_VAR
+
+
+// Part Present :0 Empty, 1 = Present
+// Short Shot Pass : 0 Fail, Pass 1
+// Camera2 Total Stain Count:
+// Camera2 Total Stain Area
+// Camera3 Total Stain Count:
+// Camera3 Total Stain Area
+// Camera4 Total Stain Count:
+// Camera4 Total Stain Area
+]]></Declaration>
+  </GVL>
+</TcPlcObject>

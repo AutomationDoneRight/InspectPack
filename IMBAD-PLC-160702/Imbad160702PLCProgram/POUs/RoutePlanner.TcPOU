@@ -1,0 +1,994 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="RoutePlanner" Id="{1695e7c5-e1de-4f29-9ed6-9e8b7377b48c}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC RoutePlanner
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	RejecLoadPosChoice			:       UINT :=5;
+	RejectNextStationLocation	:		REAL;
+	RejectNextStationIndex		:		BYTE;
+	
+	GoodULPosChoice				:       UINT :=5;
+	GoodULNextStationLocation	:		REAL;
+	GoodULNextStationIndex		:		BYTE;
+	GoodFullCount : UINT := 0;
+	PremiumFullCount : UINT := 0;
+	GoodUL_1_NextStationFlag : BYTE := 5; // Next Station is defaulted to 5 ( reject)
+	GoodUL_2_NextStationFlag : BYTE := 5; // Next Station is defaulted to 5 ( reject)
+	GoodUL_3_NextStationFlag : BYTE := 5; // Next Station is defaulted to 5 ( reject)
+	GoodUL_4_NextStationFlag : BYTE := 5; // Next Station is defaulted to 5 ( reject)
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[;]]></ST>
+    </Implementation>
+    <Folder Name="CmdsForMM" Id="{5d9d421f-970e-42e1-8a42-92df3faf0379}" />
+    <Method Name="M_ExitCapInsertSta" Id="{8d622e34-31a9-4b99-833a-aad5e6f895d3}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitCapInsertSta : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (PartsData.Status[VehicleID].OverallStatus <> ePartStatus.eReject AND 
+    PartsData.Status[VehicleID].OverallStatus <> ePartStatus.eEmpty ) THEN  // we have a good part
+   IF (LotsData.Lot.GoodUnloadEnabled) THEN // Good Unload is Enabled
+		MoveToGoodUnload(VehicleID);
+	ELSE // just go to reject
+		MoveToReject(VehicleID);		
+	END_IF		
+ELSE  // we have a reject	
+	MoveToReject(VehicleID);			
+END_IF
+
+
+
+(*
+
+IF (PartsData.Status[VehicleID].OverallStatus = ePartStatus.eCapInserted) THEN
+	Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.GOOD_UNLOAD_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.GOOD_UNLOAD_STA );
+	Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+ELSE 
+	Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.REJECT_ULOAD_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.REJECT_ULOAD_STA );
+ 	Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;		
+END_IF
+*)
+
+(*
+Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.REJECT_ULOAD_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.REJECT_ULOAD_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+*)]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitGoodUnload" Id="{c40521b2-5dfd-42b8-8190-74370c4d9b2a}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitGoodUnload : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MoveToReject(VehicleID);
+ 
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitGoodUnload_1" Id="{88fd2d1b-ecf2-4ff9-a23e-78d77c0aee7e}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitGoodUnload_1 : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE GoodUL_1_NextStationFlag OF
+	
+    2:	
+		MoveToGoodUnload_2(VehicleID);	
+	
+    3:
+		MoveToGoodUnload_3(VehicleID);	
+	
+    4:
+		MoveToGoodUnload_4(VehicleID);	
+ 
+ELSE
+		 MoveToReject(VehicleID);
+	
+END_CASE;
+
+ 
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitGoodUnload_2" Id="{a9d07807-873b-4013-9d12-eba4686a962d}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitGoodUnload_2 : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE GoodUL_2_NextStationFlag OF
+	
+	
+    3:
+		MoveToGoodUnload_3(VehicleID);	
+	
+    4:
+		MoveToGoodUnload_4(VehicleID);	
+ 
+ELSE
+		 MoveToReject(VehicleID);
+	
+END_CASE;
+ 
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitGoodUnload_3" Id="{1851bf7e-7d63-43ee-8dd0-fa5d46c5268b}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitGoodUnload_3 : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE GoodUL_3_NextStationFlag OF
+	
+
+    4:
+		MoveToGoodUnload_4(VehicleID);	
+ 
+ELSE
+		 MoveToReject(VehicleID);
+	
+END_CASE;
+ 
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitGoodUnload_4" Id="{259f11c1-8cdb-4aa8-b0b8-f78198557539}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitGoodUnload_4 : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MoveToReject(VehicleID);
+ 
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitIB_StopRobotClear" Id="{200d0821-42b0-4224-8914-cb06fec18d9b}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitIB_StopRobotClear : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (PartsData.Status[VehicleID].OverallStatus <> ePartStatus.eReject AND 
+    PartsData.Status[VehicleID].OverallStatus <> ePartStatus.eEmpty ) THEN  // we have a good part
+   IF (LotsData.Lot.CapInsertEnabled) THEN // Cap Is Enabled
+		MoveToCap(VehicleID);
+	ELSIF (LotsData.Lot.GoodUnloadEnabled) THEN // Good Unload is Enabled
+		MoveToGoodUnload(VehicleID);
+	ELSE // just go to reject
+		MoveToReject(VehicleID);		
+	END_IF		
+ELSE  // we have a reject	
+	MoveToReject(VehicleID);			
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitLoad1Sta" Id="{1e96eb00-4803-45e3-a722-ffc4394e0e30}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitLoad1Sta : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MoveToVision(VehicleID);
+//MoveToStopBeforeVision(VehicleID);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitLoad2Sta" Id="{80ecc0a6-16af-42d6-afca-f6706e1a2a1a}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitLoad2Sta : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MoveToVision(VehicleID);
+//MoveToStopBeforeVision(VehicleID);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitLoad3Sta" Id="{33284259-7360-4d69-8a2c-c0431b108cfd}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitLoad3Sta : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MoveToVision(VehicleID);
+//MoveToStopBeforeVision(VehicleID);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitLoad4Sta" Id="{32758d78-a5e0-42e4-931d-cd1fe71e0025}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitLoad4Sta : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MoveToVision(VehicleID);
+//MoveToStopBeforeVision(VehicleID);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitPistonInsertSta" Id="{56dc8c6b-ccb3-4434-9451-a97b46c9faeb}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitPistonInsertSta : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (PartsData.Status[VehicleID].OverallStatus <> ePartStatus.eReject AND 
+    PartsData.Status[VehicleID].OverallStatus <> ePartStatus.eEmpty ) THEN  // we have a good part
+    IF (Stations.fbLoad1Sta.HoldVehicle_IBStop) THEN //Yushin wants to load 
+		MoveToIBStopRobotClear(VehicleID);
+	ELSIF (LotsData.Lot.CapInsertEnabled) THEN // Cap Is Enabled
+		MoveToCap(VehicleID);
+	ELSIF (LotsData.Lot.GoodUnloadEnabled) THEN // Good Unload is Enabled
+		MoveToGoodUnload(VehicleID);
+	ELSE // just go to reject
+		MoveToReject(VehicleID);		
+	END_IF		
+ELSE  // we have a reject	
+	IF (Stations.fbLoad1Sta.HoldVehicle_IBStop) THEN //Yushin wants to load 
+		MoveToIBStopRobotClear(VehicleID);
+	ELSE  // just go to reject
+		MoveToReject(VehicleID);			
+	END_IF
+END_IF
+
+(*
+IF (Stations.fbLoad1Sta.HoldVehicle_IBStop) THEN //Yushin wants to load 
+	Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.IB_STOP_ROBOT_CLEAR_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.IB_STOP_ROBOT_CLEAR_STA );
+	Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+ELSE // move straight to the cap station or reject based on part status
+    IF (PartsData.Status[VehicleID].OverallStatus = ePartStatus.ePistonInserted) THEN
+		 Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.CAP_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.CAP_STA );
+		 Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+	ELSE 
+		Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.REJECT_ULOAD_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.REJECT_ULOAD_STA );
+ 		Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+	END_IF
+   
+END_IF
+
+
+
+//Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.CAP_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.CAP_STA );
+//Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+
+
+// Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.REJECT_ULOAD_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.REJECT_ULOAD_STA );
+ // Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+
+
+(*
+
+	Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.PISTON_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.PISTON_STA );
+	Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+	*)
+
+(*
+
+
+IF (Stations.fbLoad1Sta.HoldVehicle_IBStop) THEN //Yushin wants to load 
+	Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.IB_STOP_ROBOT_CLEAR_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.IB_STOP_ROBOT_CLEAR_STA );
+	Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+ELSE // move straight to the cap station
+	// NEED TO REMOVE THIS AFTER DEBUG ON 3/19/2017... WE ARE BYPASSING CAP STATION FOR NOW 
+    //Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.CAP_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.CAP_STA );
+	//Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+	
+	Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.GOOD_UNLOAD_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.GOOD_UNLOAD_STA );
+	Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+			
+END_IF
+
+*)
+*)]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitRejectUnload" Id="{ccb65de4-bcfb-4fc1-8aac-37c1010e4f7e}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitRejectUnload : BOOL
+VAR_INPUT	
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[RejecLoadPosChoice := RejecLoadPosChoice -1; //we initialize with this variable as 5;
+IF (RejecLoadPosChoice<=0 OR RejecLoadPosChoice>=4 ) THEN 
+	RejecLoadPosChoice := 4;
+END_IF
+CASE RejecLoadPosChoice OF
+				4: 
+					RejectNextStationLocation := MM_CONST.OB_STOP_ROBOT_CLEAR_POS;
+					RejectNextStationIndex	:= MM_CONST.OB_STOP_ROBOT_CLEAR_STA;
+				3:
+					RejectNextStationLocation := MM_CONST.LOAD_3_POS;
+					RejectNextStationIndex	:= MM_CONST.LOAD_3_STA;
+				2:
+					RejectNextStationLocation := MM_CONST.LOAD_2_POS;
+					RejectNextStationIndex	:= MM_CONST.LOAD_2_STA;
+				1:
+					RejectNextStationLocation := MM_CONST.LOAD_1_POS;
+					RejectNextStationIndex	:= MM_CONST.LOAD_1_STA;						
+END_CASE				
+	
+Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= RejectNextStationLocation, Vel := 2.0, Acc := 2.0, StationIndex := RejectNextStationIndex );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExitVisionSta" Id="{460c3f27-2d5d-4cf0-980d-e3f28721f258}">
+      <Declaration><![CDATA[METHOD PUBLIC M_ExitVisionSta : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (PartsData.Status[VehicleID].OverallStatus <> ePartStatus.eReject AND 
+    PartsData.Status[VehicleID].OverallStatus <> ePartStatus.eEmpty ) THEN  // we have a good part
+    IF (LotsData.Lot.PistonInsertEnabled) THEN //Piston is enabled
+		MoveToPiston(VehicleID);
+	ELSIF (Stations.fbLoad1Sta.HoldVehicle_IBStop) THEN //Yushin wants to load 
+		MoveToIBStopRobotClear(VehicleID);
+	ELSIF (LotsData.Lot.CapInsertEnabled) THEN // If Cap Is Enabled
+		MoveToCap(VehicleID);		
+	ELSIF (LotsData.Lot.GoodUnloadEnabled) THEN // If Good Unload is Enabled
+		MoveToGoodUnload(VehicleID);
+	ELSE // just go to reject
+		MoveToReject(VehicleID);	
+	END_IF		
+ELSE  // we have a reject	
+	IF (Stations.fbLoad1Sta.HoldVehicle_IBStop) THEN //Yushin wants to load 
+		MoveToIBStopRobotClear(VehicleID);
+	ELSE  // just go to reject
+		MoveToReject(VehicleID);		
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_NotifyVehStaCmpl" Id="{dcb99565-f67f-4080-8f23-9f88067292d8}">
+      <Declaration><![CDATA[METHOD PUBLIC M_NotifyVehStaCmpl : BOOL
+VAR_INPUT
+	StationIndex 	:	BYTE;
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE StationIndex OF
+
+		
+	MM_CONST.LOAD_1_STA:
+        M_ExitLoad1Sta(VehicleID := VehicleID);
+
+    MM_CONST.LOAD_2_STA:
+		M_ExitLoad2Sta(VehicleID := VehicleID);
+
+    MM_CONST.LOAD_3_STA:
+		M_ExitLoad3Sta(VehicleID := VehicleID);			
+
+    MM_CONST.LOAD_4_STA:					
+       M_ExitLoad4Sta(VehicleID := VehicleID);
+
+    MM_CONST.STOP_BEFORE_VISION_STA:
+		M_OBExit_StopBeforeVision(VehicleID := VehicleID);
+
+    MM_CONST.VISION_STA:
+		M_ExitVisionSta(VehicleID := VehicleID);
+
+    MM_CONST.PISTON_STA:		
+		M_ExitPistonInsertSta(VehicleID := VehicleID);
+
+	MM_CONST.IB_STOP_ROBOT_CLEAR_STA:
+		M_ExitIB_StopRobotClear(VehicleID := VehicleID);
+    
+    MM_CONST.CAP_STA:
+		M_ExitCapInsertSta(VehicleID := VehicleID);
+   
+    MM_CONST.GOOD_UNLOAD_STA:	
+	   M_ExitGoodUnload(VehicleID:=VehicleID);  
+
+    MM_CONST.GOOD_UL_1_STA:
+		M_ExitGoodUnload_1(VehicleID:=VehicleID); 
+	
+	MM_CONST.GOOD_UL_2_STA:
+		M_ExitGoodUnload_2(VehicleID:=VehicleID); 
+		
+	MM_CONST.GOOD_UL_3_STA:
+		M_ExitGoodUnload_3(VehicleID:=VehicleID); 
+	
+	MM_CONST.GOOD_UL_4_STA:	
+		M_ExitGoodUnload_4(VehicleID:=VehicleID); 
+  
+
+    MM_CONST.REJECT_ULOAD_STA:		
+		M_ExitRejectUnload(VehicleID:= VehicleID);
+	
+	MM_CONST.OB_STOP_ROBOT_CLEAR_STA:
+		M_OBExitOB_StopBeforeRobotClear(VehicleID := VehicleID);
+
+ELSE; 
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_OBExit_StopBeforeVision" Id="{f4664737-0532-442c-84e9-a8acd492192b}">
+      <Declaration><![CDATA[METHOD PUBLIC M_OBExit_StopBeforeVision : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (PartsData.Status[VehicleID].OverallStatus = ePartStatus.eEmpty) THEN
+  MoveToReject(VehicleID);
+ELSE	
+    MoveToVision(VehicleID);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_OBExitOB_StopBeforeRobotClear" Id="{ef907099-4308-412f-b9da-3a5773808998}">
+      <Declaration><![CDATA[METHOD PUBLIC M_OBExitOB_StopBeforeRobotClear : BOOL
+VAR_INPUT
+	VehicleID: BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MoveToLoadPos4(VehicleID);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToCap" Id="{b3a3c957-df72-41f2-aa94-e9454f901db0}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToCap : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.CAP_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.CAP_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToGoodUnload" Id="{dd6d7f40-5483-4dab-a0b1-2dfc52726873}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToGoodUnload : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// If for some reason a reject parts comes here, send it to reject station
+	IF (PartsData.Status[VehicleID].OverallStatus = ePartStatus.eReject) THEN
+		MoveToReject(VehicleID);
+		RETURN; 
+	END_IF	
+
+// If the Auto-Bagger is not enabled, then we distribute the pallets to all 2 UL stations 
+
+IF (NOT LotsData.Lot.AutoBaggerEnabled) THEN
+	IF (PartsData.Status[VehicleID].Premium) THEN
+		MoveToGoodUnload_2(VehicleID);
+	ELSIF (PartsData.Status[VehicleID].Good) THEN
+        MoveToGoodUnload_3(VehicleID);
+	ELSE
+		MoveToReject(VehicleID);
+	END_IF
+	
+		// Reset all Chute Part Counters 
+	Config.PremiumCount1 := 0;
+	Config.PremiumCount2 := 0;
+	Config.GoodCount1 := 0;
+	Config.GoodCount2 := 0;
+	GoodFullCount := 0;
+    PremiumFullCount := 0;
+	
+	// Exit from this routine
+	RETURN;
+END_IF
+ 
+// If Auto-bagger is enabled  
+// Chute choice is relegated at the individual station
+IF (PartsData.Status[VehicleID].Premium) THEN
+	MoveToGoodUnload_1(VehicleID);	
+ELSIF (PartsData.Status[VehicleID].Good) THEN
+	MoveToGoodUnload_3(VehicleID);
+ELSE
+	MoveToReject(VehicleID);
+END_IF
+
+(*
+IF (PartsData.Status[VehicleID].Premium) THEN
+	    // First preference is to fill Chute closest to Reject Station. 
+		IF((Config.PremiumCount1 < LotsData.Lot.QuantityInBag) AND ((Config.PremiumCount2 < (LotsData.Lot.QuantityInBag-10)) OR (Config.PremiumCount2 = LotsData.Lot.QuantityInBag))) THEN
+			MoveToGoodUnload_1(VehicleID);			
+			PremiumFullCount := 0;
+		ELSIF (Config.PremiumCount2 < LotsData.Lot.QuantityInBag) THEN
+			MoveToGoodUnload_2(VehicleID);			
+			PremiumFullCount := 0;
+		ELSE  // demote the status of the parts to Good
+			PartsData.Status[VehicleID].Premium := FALSE;
+			PartsData.Status[VehicleID].Good := TRUE;
+			PremiumFullCount := PremiumFullCount + 1;
+		END_IF
+	END_IF
+
+// If the Parts are Good 	
+	IF (PartsData.Status[VehicleID].Good) THEN   
+		//First preference is to fill the Chute downstream closer to reject/premium 
+		IF ((Config.GoodCount1 < LotsData.Lot.QuantityInBag) AND ((Config.GoodCount2 < (LotsData.Lot.QuantityInBag-10)) OR (Config.GoodCount2 = LotsData.Lot.QuantityInBag))) THEN
+			MoveToGoodUnload_3(VehicleID);	
+			GoodFullCount := 0;
+		ELSIF (Config.GoodCount2 < LotsData.Lot.QuantityInBag) THEN
+			MoveToGoodUnload_4(VehicleID);	
+			GoodFullCount := 0;
+		ELSE
+			PartsData.Status[VehicleID].Premium := FALSE;
+			PartsData.Status[VehicleID].Good := FALSE;
+			PartsData.Status[VehicleID].OverallStatus := ePartStatus.eReject;
+			PartsData.Status[VehicleID].GoodUnload := FALSE;
+			GoodFullCount := GoodFullCount + 1;
+		END_IF	
+	END_IF
+    	
+	IF (PartsData.Status[VehicleID].OverallStatus = ePartStatus.eReject) THEN
+		MoveToReject(VehicleID);
+	END_IF	
+	
+	IF (GoodFullCount >= 5 OR PremiumFullCount >= 5) THEN
+		Stations.fbCycleControl.StopRequested := TRUE;
+		Status.AutoBaggerStatusMsg := 'AutoBagger: No drop location available. Clear Chutes';
+	END_IF	
+	
+*)	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToGoodUnload_1" Id="{036b2203-da67-4b56-b00c-820db31800c4}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToGoodUnload_1 : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.GOOD_UL_1_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.GOOD_UL_1_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToGoodUnload_2" Id="{217b4eef-b729-4c7f-b6ef-b1d6e9f68814}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToGoodUnload_2 : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.GOOD_UL_2_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.GOOD_UL_2_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToGoodUnload_3" Id="{7dbe0160-e4b3-41b5-a112-53aa9fa94373}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToGoodUnload_3 : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.GOOD_UL_3_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.GOOD_UL_3_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToGoodUnload_4" Id="{0b3ad729-bf0d-4b82-b48e-ecfa284451f6}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToGoodUnload_4 : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.GOOD_UL_4_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.GOOD_UL_4_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToIBStopRobotClear" Id="{bfdaf3c0-099b-4e3a-a3a0-d4cba0ed7cb1}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToIBStopRobotClear : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.IB_STOP_ROBOT_CLEAR_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.IB_STOP_ROBOT_CLEAR_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToLoadPos4" Id="{8d73af71-127f-4216-a753-2bc8f5e84513}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToLoadPos4 : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.LOAD_4_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.LOAD_4_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToPiston" Id="{b6478e91-3e94-418e-8223-766a60db7c7a}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToPiston : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.PISTON_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.PISTON_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToReject" Id="{3158e929-675b-4d83-8335-ae0442af3432}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToReject : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.REJECT_ULOAD_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.REJECT_ULOAD_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToStopBeforeVision" Id="{386d9d5a-0a88-4168-aff5-6a35e5cbc83b}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToStopBeforeVision : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.STOP_BEFORE_VISION_POS, Vel := 2.0, Acc := 0.5, StationIndex := MM_CONST.STOP_BEFORE_VISION_STA);
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="MoveToVision" Id="{1a0dd900-73ca-449f-8f17-2f4fca9622f9}" FolderPath="CmdsForMM\">
+      <Declaration><![CDATA[METHOD PUBLIC MoveToVision : BOOL
+VAR_INPUT
+	VehicleID		:	BYTE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbVehicleManager[VehicleID].M_SetNextMoveParams(Pos:= MM_CONST.VISION_POS, Vel := 2.0, Acc := 2.0, StationIndex := MM_CONST.VISION_STA );
+Stations.fbVehicleManager[VehicleID].TriggerVehMov := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_GoodUnload_1_NextStaFlag" Id="{f9e7abad-60f2-4976-9845-8db03eea03d8}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_GoodUnload_1_NextStaFlag : BYTE]]></Declaration>
+      <Set Name="Set" Id="{c9cc38cf-e9e4-4452-8589-d5038e08fdb8}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[GoodUL_1_NextStationFlag := P_GoodUnload_1_NextStaFlag;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_GoodUnload_2_NextStaFlag" Id="{7f80488f-9639-4f42-8544-e6f7b23f08fb}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_GoodUnload_2_NextStaFlag : BYTE]]></Declaration>
+      <Set Name="Set" Id="{56a96b89-21db-40c3-b276-04beab588c30}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[GoodUL_2_NextStationFlag := P_GoodUnload_2_NextStaFlag;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_GoodUnload_3_NextStaFlag" Id="{d12314e0-0fd8-4c5e-ac6c-bc307a863cef}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_GoodUnload_3_NextStaFlag : BYTE]]></Declaration>
+      <Set Name="Set" Id="{1bae7f06-aaef-415e-a758-f37fd0d693c0}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[GoodUL_3_NextStationFlag := P_GoodUnload_3_NextStaFlag;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_GoodUnload_4_NextStaFlag" Id="{494ff4bb-7954-415b-b866-1846e8175cfd}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_GoodUnload_4_NextStaFlag : BYTE]]></Declaration>
+      <Set Name="Set" Id="{b7dd0c84-7634-4163-ad9e-a1ce11141e97}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[GoodUL_4_NextStationFlag := P_GoodUnload_4_NextStaFlag;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="SetGoodULLoadPosChoiceToInit" Id="{8f29e26a-fcd3-4639-b579-551bfb92c1d2}">
+      <Declaration><![CDATA[METHOD SetGoodULLoadPosChoiceToInit : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[GoodULPosChoice	:=5;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetRejectLoadPosChoiceToInit" Id="{ea023fca-5e90-4160-ae8d-2874f107f690}">
+      <Declaration><![CDATA[METHOD PUBLIC SetRejectLoadPosChoiceToInit : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[RejecLoadPosChoice := 5;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="RoutePlanner">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitCapInsertSta">
+      <LineId Id="68" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="54" Count="1" />
+      <LineId Id="57" Count="1" />
+      <LineId Id="60" Count="2" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="43" Count="4" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="32" Count="1" />
+      <LineId Id="36" Count="1" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="13" Count="2" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitGoodUnload">
+      <LineId Id="13" Count="1" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitGoodUnload_1">
+      <LineId Id="26" Count="1" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitGoodUnload_2">
+      <LineId Id="26" Count="1" />
+      <LineId Id="30" Count="9" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitGoodUnload_3">
+      <LineId Id="26" Count="1" />
+      <LineId Id="33" Count="6" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitGoodUnload_4">
+      <LineId Id="13" Count="1" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitIB_StopRobotClear">
+      <LineId Id="74" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="51" Count="1" />
+      <LineId Id="54" Count="1" />
+      <LineId Id="57" Count="1" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="44" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitLoad1Sta">
+      <LineId Id="17" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitLoad2Sta">
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitLoad3Sta">
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitLoad4Sta">
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitPistonInsertSta">
+      <LineId Id="127" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="99" Count="1" />
+      <LineId Id="102" Count="1" />
+      <LineId Id="105" Count="1" />
+      <LineId Id="108" Count="1" />
+      <LineId Id="111" Count="1" />
+      <LineId Id="114" Count="1" />
+      <LineId Id="117" Count="1" />
+      <LineId Id="120" Count="1" />
+      <LineId Id="132" Count="48" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitRejectUnload">
+      <LineId Id="6" Count="19" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_ExitVisionSta">
+      <LineId Id="88" Count="3" />
+      <LineId Id="93" Count="1" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="99" Count="1" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="105" Count="4" />
+      <LineId Id="111" Count="1" />
+      <LineId Id="114" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_NotifyVehStaCmpl">
+      <LineId Id="8" Count="0" />
+      <LineId Id="11" Count="2" />
+      <LineId Id="15" Count="2" />
+      <LineId Id="20" Count="2" />
+      <LineId Id="24" Count="2" />
+      <LineId Id="28" Count="2" />
+      <LineId Id="32" Count="2" />
+      <LineId Id="36" Count="1" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="70" Count="1" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="140" Count="1" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="142" Count="0" />
+      <LineId Id="146" Count="2" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="149" Count="0" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="150" Count="1" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="110" Count="0" />
+      <LineId Id="118" Count="1" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="120" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_OBExit_StopBeforeVision">
+      <LineId Id="14" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.M_OBExitOB_StopBeforeRobotClear">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToCap">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToGoodUnload">
+      <LineId Id="3" Count="3" />
+      <LineId Id="9" Count="23" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="116" Count="1" />
+      <LineId Id="119" Count="1" />
+      <LineId Id="122" Count="1" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="114" Count="1" />
+      <LineId Id="68" Count="41" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToGoodUnload_1">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToGoodUnload_2">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToGoodUnload_3">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToGoodUnload_4">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToIBStopRobotClear">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToLoadPos4">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToPiston">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToReject">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToStopBeforeVision">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.MoveToVision">
+      <LineId Id="3" Count="1" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.P_GoodUnload_1_NextStaFlag.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.P_GoodUnload_2_NextStaFlag.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.P_GoodUnload_3_NextStaFlag.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.P_GoodUnload_4_NextStaFlag.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.SetGoodULLoadPosChoiceToInit">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="RoutePlanner.SetRejectLoadPosChoiceToInit">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

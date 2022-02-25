@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ePartStatus" Id="{e81cf81f-c96f-4c62-89f9-d940fd4e80fe}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE ePartStatus :
+(
+	eEmpty :=0, // grey
+    eLoaded,    // blue 
+	eVisionPass, // green 
+	ePistonInserted, // green
+	eCapInserted, //green 
+	eGoodPremium, //green 
+	eGoodRegular, // lime green
+	eReject, //red
+    eJam //vehicle jam
+	
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

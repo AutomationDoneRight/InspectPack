@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_B5Cmd" Id="{de22ddf8-b1c4-4f5a-ac97-d2fd6fd33321}">
+    <Declaration><![CDATA[(* B5 = Status Request *)
+TYPE ST_B5Cmd :
+STRUCT
+	//Cmd_Header	:BYTE	:=16#B5;	(* 1 byte*)
+	ReqType		:BYTE	:=0;		(* 1 bytes*)
+	ID			:UINT	:=0;		(* 2 bytes*)
+	MotorIndex	:BYTE	:=0;		(* 1 bytes*)
+	CRC			:UINT   :=0;        (*2 bytes *) 
+    //CRC1		:BYTE	:=16#00;    (* 1 byte*)
+	//CRC2		:BYTE	:=16#00;    (* 2 byte*)
+	
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

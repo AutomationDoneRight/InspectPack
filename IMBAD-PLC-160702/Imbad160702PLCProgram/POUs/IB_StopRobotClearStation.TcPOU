@@ -1,0 +1,159 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="IB_StopRobotClearStation" Id="{4d0c533c-d737-41da-aadf-236b1de6a77c}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC IB_StopRobotClearStation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : eIB_StopRobotClearStaState := eIB_StopRobotClearStaState.eUnknown;
+	NextState : eIB_StopRobotClearStaState := eIB_StopRobotClearStaState.eUnknown;
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[CASE State OF
+eIB_StopRobotClearStaState.eUnknown:
+	NextState := eIB_StopRobotClearStaState.eReady;
+	
+eIB_StopRobotClearStaState.eInit:
+
+eIB_StopRobotClearStaState.eHoming:
+
+eIB_StopRobotClearStaState.eReady:
+	IF (xTrigger) THEN
+		NextState := eIB_StopRobotClearStaState.eProcessing;		
+		DwellTimer(IN:=FALSE);
+	END_IF
+
+eIB_StopRobotClearStaState.eDwell:	
+
+eIB_StopRobotClearStaState.eProcessing:
+	IF(Stations.fbLoad1Sta.HoldVehicle_IBStop = FALSE) THEN
+		NextState := eIB_StopRobotClearStaState.eDepart;
+	END_IF
+
+eIB_StopRobotClearStaState.eDepart:
+		Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.IB_STOP_ROBOT_CLEAR_STA, VehicleID := VUT);
+		xTrigger := FALSE;
+		IF (Stations.fbCycleControl.StopRequested) THEN
+			NextState := eIB_StopRobotClearStaState.eStopActive;
+		ELSE
+			NextState := eIB_StopRobotClearStaState.eReady;		
+		END_IF
+		
+eIB_StopRobotClearStaState.eStopActive:
+	IF (NOT Stations.fbCycleControl.StopRequested) THEN
+		NextState := eIB_StopRobotClearStaState.eReady;	
+	END_IF
+		
+eIB_StopRobotClearStaState.eError:
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+//Status.StationsState[MM_CONST.IB_STOP_ROBOT_CLEAR_STA_HMI_STATE] := State;
+//AssignStationStatusForHMI();]]></ST>
+    </Implementation>
+    <Method Name="ClearVehicleTrigger" Id="{d31806d1-389e-4abb-b8ff-d2fb476700f0}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;
+State  := eIB_StopRobotClearStaState.eUnknown;
+NextState  := eIB_StopRobotClearStaState.eUnknown;
+bFirst  := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Trigger" Id="{40d14ebd-90f9-4db6-89df-0f4886d7b4b1}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{86465deb-a801-4269-bf98-4c153f17f580}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="VehicleUnderTest" Id="{cb55f436-0b0b-4803-a6c4-9a942dad1487}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{0f451fc6-5c3d-4585-9138-09baf63b0899}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{d2921964-018f-4f5f-b0d8-94969bcb7406}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="IB_StopRobotClearStation">
+      <LineId Id="11" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="43" Count="1" />
+      <LineId Id="46" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="74" Count="2" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="104" Count="0" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="138" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="137" Count="0" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="139" Count="2" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="12" Count="8" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="IB_StopRobotClearStation.ClearVehicleTrigger">
+      <LineId Id="9" Count="0" />
+      <LineId Id="11" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="IB_StopRobotClearStation.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="IB_StopRobotClearStation.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="IB_StopRobotClearStation.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

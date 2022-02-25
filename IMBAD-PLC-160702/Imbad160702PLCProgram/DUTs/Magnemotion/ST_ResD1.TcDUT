@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_ResD1" Id="{817a9724-b72c-48b1-9106-b1a8567bad72}">
+    <Declaration><![CDATA[TYPE ST_ResD1 :
+STRUCT
+	HLC_State		:BYTE;
+	EIP_Comm_State	:BYTE;		
+	CRC1			:BYTE;	    (* 1 byte*)
+	CRC2			:BYTE;	    (* 1 byte*)		
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

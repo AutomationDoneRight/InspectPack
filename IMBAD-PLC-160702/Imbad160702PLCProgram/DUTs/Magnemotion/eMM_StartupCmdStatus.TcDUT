@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eMM_StartupCmdStatus" Id="{b6166209-0261-4eca-a444-4c52f294fd96}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eMM_StartupCmdStatus :
+(
+	eMM_StartupCmdSent,
+	eMM_StartupCmdAck,
+	eMM_StartupCmdRejected,
+	eMM_StartupCmdComplete
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eVisionStaState" Id="{90c313b4-6119-424c-96d9-080893f548cc}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eVisionStaState :
+( 
+	eUnknown := 801,
+	eCheckToolPosition,
+    eInit,
+	eHoming,
+	eCmdTriggerReset,
+	eCheckTriggerResetCmpl,
+	eConfirmRunState,
+	eGetProgramNumber,
+	eCheckProgramNumber,
+	eChangeProgramNumber,
+	eReady,
+	eWaitingForVehicleTrigger,
+	eShortShotTrigger,
+	eWaitShortShotDone,
+	eBarellInspectTrigger,
+	eWaitBarellInspectDone,
+	eProcessVisionData,
+    eDepart,
+	eStopActive,
+    eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

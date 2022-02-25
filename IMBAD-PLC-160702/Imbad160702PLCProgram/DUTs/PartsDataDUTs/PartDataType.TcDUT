@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="PartDataType" Id="{5d01b3ca-d2c4-46f1-a545-4af952bc6f45}">
+    <Declaration><![CDATA[TYPE PartDataType:
+STRUCT
+	OverallStatus: ePartStatus;	// This will keep getting updated as the part travels and this is used by the machine
+	VisionData: VisionInspectDataType; // Data to be recorded to database
+	PistonStroke : REAL; // Piston stroke for database
+	CapTorque    : REAL; // Cap torque for database     
+	Premium 	 : BOOL; // Is Premium
+	Good		 : BOOL; // If not premium, but good
+	VisionPass	 : BOOL; // If not premium and not good
+	PistonPass	 : BOOL; // Piston Pass = 1, 0 if not. Piston Sta be may be disabled, and this value will be 0 even for disabled
+	CapPass		 : BOOL; // Cap Pass =1, 0 if failed or station is disabled
+	GoodUnload   : BOOL; // Pass =1 if unloaded succesfully, or 0 if not successful or disabled
+	PartNumber   : STRING; // Comes from the Part number when started a new Lot
+	LotNumber 	 : STRING; // Comes from Lot start 
+	LoadTime	 : STRING; //Timestamp when loaded 
+	VisionInspectTime : STRING; //Timestamp when vision inspected
+	PistonInsertTime : STRING; //Timestamp when piston inserted
+	CapInsertTime : STRING; // Timestamp when cap inserted
+	RejectUnloadTime : STRING; //Timestamp when reject part is unloaded
+    UnloadTime   : STRING; // Timestamp when unloaded ( this for good unload station)
+	CavityNumber : INT; // Based on Yushin Position
+	BarrelSize	 : eBarrelType; 
+	BurnOffTemp  : REAL;
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

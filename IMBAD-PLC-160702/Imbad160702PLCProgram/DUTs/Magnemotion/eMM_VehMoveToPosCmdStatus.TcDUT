@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eMM_VehMoveToPosCmdStatus" Id="{ec146ab1-e05f-4ffd-a906-782ece16c75e}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eMM_VehMoveToPosCmdStatus :
+(
+	eMM_VehMoveToPosCmdSent,
+	eMM_VehMoveToPosCmdAck,
+	eMM_VehMoveToPosCmdRejected,
+	eMM_VehMoveToPosCmdComplete
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_B3Res" Id="{158c0bf2-b92a-497c-b3f1-755e760cc339}">
+    <Declaration><![CDATA[(* B3 = Resume Movement *)
+TYPE ST_B3Res :
+STRUCT
+	PathID			:UINT;		(* 2 bytes*)
+	CRC1			:BYTE;	    (* 1 byte*)
+	CRC2			:BYTE;	    (* 1 byte*)		
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

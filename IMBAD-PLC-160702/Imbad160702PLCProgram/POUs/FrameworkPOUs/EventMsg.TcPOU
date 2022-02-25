@@ -1,0 +1,76 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="EventMsg" Id="{fc5ade13-1038-4ae2-90bb-debf2ec12c51}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC EventMsg
+VAR_INPUT
+
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	CfgEvent                : TcEvent;
+    fbEvent                 : ADSLOGEVENT;
+    bSetEvent               : BOOL;(* Rising edge sets event *)  
+	bInitialize : BOOL := TRUE;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (bInitialize) THEN
+	CfgEvent.Class := TCEVENTCLASS_ALARM;
+	CfgEvent.Prio := 2;
+	CfgEvent.Id := 1;
+	CfgEvent.SourceId := 17001;
+	CfgEvent.bQuitRequired := FALSE;//TRUE;
+	CfgEvent.Flags := TCEVENTFLAG_LOG OR TCEVENTFLAG_SRCID OR TCEVENTFLAG_AUTOFMTALL;
+	CfgEvent.StreamType := TCEVENTSTREAM_SIMPLE;
+	CfgEvent.ProgId :='TcEventFormatter.TcXMLFormatter' ;
+    bInitialize:= FALSE;	
+END_IF
+
+fbEvent(Event:=FALSE);]]></ST>
+    </Implementation>
+    <Method Name="SendEventMsg" Id="{f580e47c-e1a2-4452-a3d0-0b82ba5d1333}">
+      <Declaration><![CDATA[METHOD PUBLIC SendEventMsg : BOOL
+VAR_INPUT
+	MsgClass :		UDINT;
+	EventID :		UDINT;
+	SourceID : 		UDINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+CfgEvent.Class := MsgClass;
+CfgEvent.Id := EventID;
+CfgEvent.SourceId := SourceID;
+fbEvent( NETID:= '',
+        PORT:= 110,
+        Event:=TRUE,					//Looking for rising edge here.
+        EventConfigData:= CfgEvent,        
+        TMOUT:= T#3S);
+fbEvent(Event:= FALSE);		// transition, if not already done to falling edge
+
+		]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="EventMsg">
+      <LineId Id="22" Count="0" />
+      <LineId Id="24" Count="4" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="34" Count="1" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="EventMsg.SendEventMsg">
+      <LineId Id="20" Count="0" />
+      <LineId Id="16" Count="1" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="9" Count="2" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <DUT Name="eCapInsertStaState" Id="{2f383e62-8410-4ffa-9477-3420ec5b6a6d}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eCapInsertStaState :
+( 
+	eUnknown := 51,
+	eHoming,
+	eDisabledReady,
+	eWaitForVehicleTrigger,
+	ePalletHoldDownGoingDown,
+	ePalletHoldDownExtended,
+	eCapSlideGoingDown,
+	eCapSlideExtended,
+	eCapSlideGoingUp,
+	eCapSlideUp,
+	ePalletHoldDownGoingUp,
+	ePalletHoldDownUp,
+	eDepart,
+	eStopActive,
+    eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>
