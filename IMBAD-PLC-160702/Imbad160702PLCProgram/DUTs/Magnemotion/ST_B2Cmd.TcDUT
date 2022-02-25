@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_B2Cmd" Id="{b8f326ff-9ab6-4fb6-87b9-95f48e79c191}">
+    <Declaration><![CDATA[(* B2 = Statrup *)
+TYPE ST_B2Cmd :
+STRUCT
+	Cmd_Header	:BYTE	:=16#B2;	(* 1 byte*)
+	PathID		:UINT	:=0; 		(* 2 bytes*)
+	CRC			:UINT   :=0;        (*2 bytes *) 
+	//CRC1		:BYTE	:=16#00;    (* 1 byte*)
+	//CRC2		:BYTE	:=16#00;    (* 1 byte*)
+	
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

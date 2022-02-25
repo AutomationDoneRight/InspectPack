@@ -1,0 +1,706 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="AutoBagger" Id="{77b56fb7-422d-4f22-8775-dd76a663c4d0}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK AutoBagger
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	State : eAutoBaggerState := eAutoBaggerState.eUnknown;
+	NextState : eAutoBaggerState := eAutoBaggerState.eUnknown;
+	ErrorReturnState: eAutoBaggerState := eAutoBaggerState.eUnknown;
+	DwellTimer : TON;
+	StateTimer : TON;		
+	ActiveChute : BYTE;
+	bFirst : BOOL := FALSE;
+	stopRequested : BOOL := FALSE;
+	ShakeAttempts :BYTE :=0;
+	MaxShakeAttempts: BYTE := 2;
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (NOT LotsData.Lot.AutoBaggerEnabled) THEN
+	NextState := eAutoBaggerState.eInit;
+END_IF
+//   If valve is changed so that the chutes remain closed on E-Stop then comment out the block below by removing the //
+//(*
+IF (GVL_IO.MachineEStopped) THEN 
+	Config.PremiumCount1 := 0;
+	Config.PremiumCount2 := 0;
+	Config.GoodCount1 := 0;
+	Config.GoodCount2 := 0;
+END_IF
+//*)   
+//  If valve is changed so that the chutes remain closed on E-Stop then remove the slash on the line above 
+
+CASE State OF
+
+eAutoBaggerState.eUnknown:
+   IF (GVL_IO.MC_XStartPB AND GVL_IO.MC_XAirPressureOK AND GVL_IO.MC_NotEStopped) THEN // wait for start button when powered up or PLC program restarted
+		NextState := eAutoBaggerState.eInit;	   
+   END_IF
+
+eAutoBaggerState.eInit:
+	StateTimer(IN:=TRUE, PT:= T#10S);
+	
+	IF (NOT LotsData.Lot.AutoBaggerEnabled) THEN
+		Act_OpenGoodChute1();
+		Act_OpenGoodChute2();
+		Act_OpenPremiumChute1();
+		Act_OpenPremiumChute2();		
+		Status.AutoBaggerStatusMsg := 'Bagger Disabled';
+		StateTimer(IN:=FALSE);
+		Act_TriggerBaggerOFF();
+	END_IF
+	
+	IF (LotsData.Lot.AutoBaggerEnabled) THEN
+		Act_CloseTrapDoor();
+		Act_TriggerBaggerOFF();
+		IF (ChuteClosed) THEN    //All Chutes are closed 
+			NextState := eAutoBaggerState.eCheckWaitingLabel;
+			Status.AutoBaggerStatusMsg := '';
+			StateTimer(IN:=FALSE);
+		END_IF
+	END_IF 
+	
+	IF(StateTimer.Q AND LotsData.Lot.AutoBaggerEnabled AND NOT ChuteClosed) THEN
+		NextState := eAutoBaggerState.eError;
+		ErrorReturnState := eAutoBaggerState.eInit; 
+		Status.AutoBaggerStatusMsg := 'AutoBagger: Unable to Close Chutes, Fix & Press START ';
+		StateTimer(IN:=FALSE);
+	END_IF
+
+eAutoBaggerState.eCheckWaitingLabel: //checking to see if Step 1 in document is OK i.e. Not Faulted, Waiting for Label and Not Ready for filler
+	StateTimer(IN:=TRUE, PT:= T#10S);
+	IF (IsBaggerWaitingForLabel() AND IsBaggerOK_NotFaulted() (*AND IsBagClosed()*)) THEN
+		NextState := eAutoBaggerState.eReady;
+		StateTimer(IN:=FALSE);
+	END_IF
+	IF(StateTimer.Q ) THEN
+		NextState := eAutoBaggerState.eError;
+		ErrorReturnState := eAutoBaggerState.eCheckWaitingLabel;
+		StateTimer(IN:=FALSE);
+	END_IF
+
+//Wait for one chute to fill up
+eAutoBaggerState.eReady:
+	Act_CloseTrapDoor();
+	IF (Config.PremiumCount1 = LotsData.Lot.QuantityInBag) THEN
+		ActiveChute := 1;
+		NextState := eAutoBaggerState.eSendLabel;
+	ELSIF (Config.PremiumCount2 = LotsData.Lot.QuantityInBag) THEN
+		ActiveChute := 2;
+		NextState := eAutoBaggerState.eSendLabel;
+	ELSIF (Config.GoodCount1 = LotsData.Lot.QuantityInBag) THEN
+		ActiveChute := 3;
+		NextState := eAutoBaggerState.eSendLabel;
+	ELSIF (Config.GoodCount2 = LotsData.Lot.QuantityInBag) THEN
+		ActiveChute := 4;
+		NextState := eAutoBaggerState.eSendLabel;
+	END_IF
+	
+	
+//send label and print command
+eAutoBaggerState.eSendLabel:
+	
+	IF(ActiveChute = 1 OR ActiveChute = 2) THEN //Send Premium label
+		M_SendLabel(TRUE);		
+	ELSE
+		M_SendLabel(FALSE);		
+	END_IF
+	NextState := eAutoBaggerState.eWaitForBagOpen;	
+
+
+eAutoBaggerState.eWaitForBagOpen:
+	StateTimer(IN:=TRUE, PT := T#10S);
+	IF (IsBaggerLabelPrinted() AND IsBaggerOK_NotFaulted() AND IsBaggerOpenWaitingforParts()) THEN
+		NextState := eAutoBaggerState.eDropParts;
+		ShakeAttempts:=0;
+		StateTimer(IN:=FALSE);
+	END_IF
+	
+	IF(StateTimer.Q ) THEN
+		NextState := eAutoBaggerState.eError;
+		ErrorReturnState := eAutoBaggerState.eHandleBagOpenError;
+		StateTimer(IN:=FALSE);
+	END_IF
+	
+eAutoBaggerState.eHandleBagOpenError:
+
+IF (IsBaggerWaitingForLabel()) THEN
+	NextState := eAutoBaggerState.eSendLabel;
+ELSIF (IsBaggerLabelPrinted() AND IsBaggerOK_NotFaulted() AND IsBaggerOpenWaitingforParts()) THEN
+		NextState := eAutoBaggerState.eDropParts;
+ELSE
+	NextState := eAutoBaggerState.eError;
+	ErrorReturnState := eAutoBaggerState.eHandleBagOpenError;
+	StateTimer(IN:=FALSE);		
+END_IF
+		
+
+eAutoBaggerState.eDropParts:
+//open trap door for (chute)
+	StateTimer(IN:=TRUE, PT:= T#20S);
+	IF (ActiveChute = 3) THEN//Prioritize Good chutes because Premium can go into good, so we waste less.  
+		Act_OpenGoodChute1();
+		DwellTimer(IN:=TRUE, PT:= T#4S);
+	ELSIF (ActiveChute = 4) THEN
+		Act_OpenGoodChute2();
+		DwellTimer(IN:=TRUE, PT:= T#4S);
+	ELSIF (ActiveChute = 1) THEN
+		Act_OpenPremiumChute1();
+		DwellTimer(IN:=TRUE, PT:= T#4S);
+	ELSIF (ActiveChute = 2) THEN
+		Act_OpenPremiumChute2();
+		DwellTimer(IN:=TRUE, PT:= T#4S);
+	END_IF
+
+//wait long enough for parts to drop, then move to next state
+	IF (DwellTimer.Q AND ChuteOpen AND NOT ChuteClosed) THEN
+		NextState := eAutoBaggerState.eHalfCloseTrapDoor;
+		/// If you want to skip the trap door double cycle, then uncomment the line below and login->online change, check update boot project
+		//NextState := eAutoBaggerState.eCloseTrapDoor;   
+		DwellTimer(IN:=FALSE);
+		StateTimer(IN:=FALSE);
+	END_IF	
+	
+	IF (StateTimer.Q AND NOT ChuteOpen) THEN
+		NextState := eAutoBaggerState.eError;
+		ErrorReturnState := eAutoBaggerState.eDropParts;
+		Status.AutoBaggerStatusMsg := 'AutoBagger: Unable to open chute door. Fix then hit START';
+		StateTimer(IN:=FALSE);
+		DwellTimer(IN:=FALSE);
+	END_IF
+
+eAutoBaggerState.eHalfCloseTrapDoor:
+
+    Act_CloseTrapDoor();
+	StateTimer(IN:=TRUE, PT:= T#1000MS);
+	IF (StateTimer.Q) THEN
+		NextState := eAutoBaggerState.eOpenTrapDoorFinal;		
+		StateTimer(IN:=FALSE);
+		DwellTimer(IN:=FALSE);
+		ShakeAttempts := ShakeAttempts + 1;
+	END_IF
+	
+eAutoBaggerState.eOpenTrapDoorFinal:
+//open trap door FOR (chute)
+	StateTimer(IN:=TRUE, PT:= T#20S);
+	IF (ActiveChute = 3) THEN//Prioritize Good chutes because Premium can go into good, so we waste less.  
+		Act_OpenGoodChute1();
+		DwellTimer(IN:=TRUE, PT:= T#3S);
+	ELSIF (ActiveChute = 4) THEN
+		Act_OpenGoodChute2();
+		DwellTimer(IN:=TRUE, PT:= T#3S);
+	ELSIF (ActiveChute = 1) THEN
+		Act_OpenPremiumChute1();
+		DwellTimer(IN:=TRUE, PT:= T#3S);
+	ELSIF (ActiveChute = 2) THEN
+		Act_OpenPremiumChute2();
+		DwellTimer(IN:=TRUE, PT:= T#3S);
+	END_IF
+
+//wait long enough for parts to drop, then move to next state
+	IF (DwellTimer.Q AND ChuteOpen AND NOT ChuteClosed) THEN
+		NextState := eAutoBaggerState.eCloseTrapDoor;
+		DwellTimer(IN:=FALSE);
+		StateTimer(IN:=FALSE);
+	END_IF	
+	
+	IF (StateTimer.Q AND NOT ChuteOpen) THEN
+		NextState := eAutoBaggerState.eError;
+		ErrorReturnState := eAutoBaggerState.eDropParts;
+		Status.AutoBaggerStatusMsg := 'AutoBagger: Unable to open chute door. Fix then hit START';
+		StateTimer(IN:=FALSE);
+		DwellTimer(IN:=FALSE);
+	END_IF
+	
+
+	
+eAutoBaggerState.eCloseTrapDoor:
+	Act_CloseTrapDoor();
+	StateTimer(IN:=TRUE, PT:= T#10S);
+	IF (ChuteClosed AND NOT ChuteOpen) THEN
+		NextState := eAutoBaggerState.eTriggerBagger;
+		StateTimer(IN:=FALSE);
+		
+	END_IF	
+	
+	IF (StateTimer.Q AND NOT ChuteClosed) THEN
+		IF (ShakeAttempts < MaxShakeAttempts) THEN
+			NextState := eAutoBaggerState.eHalfCloseTrapDoor;
+		ELSE
+			Status.AutoBaggerStatusMsg := 'Chute door CANNOT close. Clear jams, then hit START';
+			NextState := eAutoBaggerState.eError;
+			ErrorReturnState := eAutoBaggerState.eCloseTrapDoor;
+			StateTimer(IN:=FALSE);
+			DwellTimer(IN:=FALSE);
+		END_IF
+	END_IF
+
+	
+
+eAutoBaggerState.eTriggerBagger:
+	ShakeAttempts := 0;
+	ACT_TriggerBaggerON();
+	DwellTimer(IN:=TRUE, PT:= T#500MS);
+	
+	IF (DwellTimer.Q) THEN
+		NextState := eAutoBaggerState.eWaitforBaggingStart;
+		IF (ActiveChute = 1) THEN
+			Config.PremiumCount1 := 0;
+		ELSIF (ActiveChute = 2) THEN
+			Config.PremiumCount2 := 0;
+		ELSIF (ActiveChute = 3) THEN
+			Config.GoodCount1 := 0;
+		ELSIF (ActiveChute = 4) THEN
+			Config.GoodCount2 := 0;
+		END_IF
+		DwellTimer(IN:=FALSE);
+	END_IF	
+	
+eAutoBaggerState.eWaitforBaggingStart:
+		StateTimer(IN:=TRUE, PT:= T#10S);
+		IF (NOT IsBaggerOpenWaitingforParts()) THEN
+			ACT_TriggerBaggerOFF();
+			NextState := eAutoBaggerState.eWaitforBaggingComplete;
+		END_IF
+		
+	IF (StateTimer.Q AND IsBaggerOpenWaitingforParts()) THEN
+		Status.AutoBaggerStatusMsg := 'Autobagger DIDNT start bagging. Fix Error & hit START';
+		NextState := eAutoBaggerState.eError;
+		ErrorReturnState := eAutoBaggerState.eTriggerBagger;
+		IF (IsBaggerWaitingForLabel()) THEN 
+			ErrorReturnState := eAutoBaggerState.eSendLabel;
+		END_IF
+		ACT_TriggerBaggerOFF();
+		StateTimer(IN:=FALSE);
+		DwellTimer(IN:=FALSE);
+	END_IF	
+		
+eAutoBaggerState.eWaitForBaggingComplete:
+	StateTimer(IN:=TRUE, PT := T#20S);
+	IF (IsBaggerWaitingForLabel()) THEN
+		NextState := eAutoBaggerState.eReady;
+		StateTimer(IN:=FALSE);
+	END_IF
+	
+	IF (StateTimer.Q AND NOT IsBaggerWaitingForLabel()) THEN
+		Status.AutoBaggerStatusMsg := 'Autobagger DIDNT complete bagging. Fix Error & hit START';
+		NextState := eAutoBaggerState.eError;
+		ErrorReturnState := eAutoBaggerState.eTriggerBagger;
+		IF (IsBaggerWaitingForLabel()) THEN 
+			ErrorReturnState := eAutoBaggerState.eSendLabel;
+		END_IF
+		IF (NOT IsBaggerOK_NotFaulted()) THEN
+			ErrorReturnState := eAutoBaggerState.eInit;
+		END_IF
+		ACT_TriggerBaggerOFF();
+		StateTimer(IN:=FALSE);
+		DwellTimer(IN:=FALSE);
+	END_IF	
+
+eAutoBaggerState.eError: 
+			
+	Status.StationStauts[MM_CONST.AUTOBAGGER_HMI_STATE] := OverallStationStatus.eError;
+	IF (GVL_IO.MC_XStartPB) THEN
+		NextState := ErrorReturnState;
+		ErrorReturnState := eAutoBaggerState.eError;
+	END_IF
+	
+END_CASE
+
+//If any chute holds more parts than the maximum number, send station to Error.  
+(*
+IF(Config.GoodCount1 > LotsData.Lot.QuantityInBag OR Config.GoodCount1 > LotsData.Lot.QuantityInBag OR Config.GoodCount1 > LotsData.Lot.QuantityInBag OR Config.GoodCount1 > LotsData.Lot.QuantityInBag) THEN
+	NextState := eAutoBaggerState.eError;
+	ErrorReturnState := eAutoBaggerState.eInit;
+	Status.AutoBaggerStatusMsg := 'Chute Count MAX. Open/Close Chute, Clear Count then HIT START';
+END_IF
+*)
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+	StateTimer(IN:=FALSE);
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+AssignStationStatusForHMI();]]></ST>
+    </Implementation>
+    <Action Name="Act_CloseTrapDoor" Id="{63ea4456-e14c-438c-8663-a7d12b05e4ea}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.BG_YOpenChute1 := FALSE;
+GVL_IO.BG_YOpenChute2 := FALSE;
+GVL_IO.BG_YOpenChute3 := FALSE;
+GVL_IO.BG_YOpenChute4 := FALSE;
+
+GVL_IO.BG_YCloseChute1 := TRUE;
+GVL_IO.BG_YCloseChute2 := TRUE;
+GVL_IO.BG_YCloseChute3 := TRUE;
+GVL_IO.BG_YCloseChute4 := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_OpenGoodChute1" Id="{d6f9455b-7206-4c73-bbd8-1b01e2767182}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.BG_YOpenChute3 := TRUE;
+GVL_IO.BG_YCloseChute3 := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_OpenGoodChute2" Id="{33d4536a-16da-40eb-bdef-68fdcfeef11b}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.BG_YOpenChute4 := TRUE;
+GVL_IO.BG_YCloseChute4 := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_OpenPremiumChute1" Id="{bb3d4f18-6959-4110-b15c-dce0941a858e}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.BG_YOpenChute1 := TRUE;
+GVL_IO.BG_YCloseChute1 := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_OpenPremiumChute2" Id="{457c0d53-45fd-4b5b-8097-8e966f5f66b6}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.BG_YOpenChute2 := TRUE;
+GVL_IO.BG_YCloseChute2 := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_OpenTrapDoor" Id="{2ae1c4a2-2080-42f0-987e-b0df6d927101}">
+      <Implementation>
+        <ST><![CDATA[IF (ActiveChute = 1) THEN
+	GVL_IO.BG_YOpenChute1 := TRUE;
+	GVL_IO.BG_YCloseChute1 := FALSE;
+ELSIF (ActiveChute = 2) THEN
+	GVL_IO.BG_YOpenChute2 := TRUE;
+	GVL_IO.BG_YCloseChute2 := FALSE;
+ELSIF (ActiveChute = 3) THEN
+	GVL_IO.BG_YOpenChute3 := TRUE;
+	GVL_IO.BG_YCloseChute3 := FALSE;
+ELSIF (ActiveChute = 4) THEN
+	GVL_IO.BG_YOpenChute4 := TRUE;
+	GVL_IO.BG_YCloseChute4 := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="ACT_TriggerBaggerOFF" Id="{9e2bb17f-477f-4e7a-8cba-905f0d413df7}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.BG_YFillerTrigger := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="ACT_TriggerBaggerON" Id="{48112dd2-88ff-4525-af82-980c2d413664}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.BG_YFillerTrigger := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="AssignStationStatusForHMI" Id="{db2e07ac-f14e-42e7-8896-287df9d10266}">
+      <Declaration><![CDATA[METHOD AssignStationStatusForHMI : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.StationsState[MM_CONST.AUTOBAGGER_HMI_STATE] := State;
+IF (NOT LotsData.Lot.AutoBaggerEnabled) THEN
+	Status.StationStauts[MM_CONST.AUTOBAGGER_HMI_STATE] := OverallStationStatus.eDisabled;
+ELSE	
+	CASE State OF
+	eAutoBaggerState.eUnknown,eAutoBaggerState.eError, eAutoBaggerState.eDoorCannotOpen, eAutoBaggerState.eDoorCannotClose, eAutoBaggerState.eMissingBusySignal, eAutoBaggerState.eMissingBusySignal2, eAutoBaggerState.eMissingNotBusySignal: 
+		Status.StationStauts[MM_CONST.AUTOBAGGER_HMI_STATE] := OverallStationStatus.eError;
+		
+	eAutoBaggerState.eInit:
+	    Status.StationStauts[MM_CONST.AUTOBAGGER_HMI_STATE] := OverallStationStatus.eHoming;
+	
+    eAutoBaggerState.eWaitForBaggerNotBusy, eAutoBaggerState.eWaitForBaggerBusy:
+	    Status.StationStauts[MM_CONST.AUTOBAGGER_HMI_STATE] := OverallStationStatus.eWarning;
+	
+	eAutoBaggerState.eReady:
+	    Status.StationStauts[MM_CONST.AUTOBAGGER_HMI_STATE] := OverallStationStatus.eWaitingForParts;
+		 
+    eAutoBaggerState.eCloseTrapDoor, eAutoBaggerState.eHalfCloseTrapDoor, eAutoBaggerState.eOpenTrapDoorFinal, eAutoBaggerState.eDetachBag1, eAutoBaggerState.eDetachBag2, eAutoBaggerState.eDropParts,
+	eAutoBaggerState.eFeederReadyReset1, eAutoBaggerState.eFeederReadyReset2, eAutoBaggerState.eSendLabel: 
+	    Status.StationStauts[MM_CONST.AUTOBAGGER_HMI_STATE] := OverallStationStatus.eRunning;
+		
+		//Status.StationStauts[MM_CONST.AUTOBAGGER_HMI_STATE] := OverallStationStatus.eCycleStop;
+    
+    ELSE ;	
+	END_CASE
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="ChuteClosed" Id="{b0247b4a-7a4c-41a8-a1fd-77f5d4945363}">
+      <Declaration><![CDATA[PROPERTY ChuteClosed : BOOL]]></Declaration>
+      <Get Name="Get" Id="{d6e43bcf-08de-42f1-b211-0e466a34c762}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[IF (GVL_IO.BG_XChute1Closed AND GVL_IO.BG_XChute2Closed AND GVL_IO.BG_XChute3Closed AND GVL_IO.BG_XChute4Closed) THEN
+	ChuteClosed := TRUE;
+ELSE
+	ChuteClosed := FALSE;
+END_IF]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="ChuteOpen" Id="{777a3d07-cc4a-4d87-8c45-b0ecdf7a673e}">
+      <Declaration><![CDATA[PROPERTY ChuteOpen : BOOL]]></Declaration>
+      <Get Name="Get" Id="{7e187176-b284-41cf-ac27-d5ac27b6da7d}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[CASE ActiveChute OF
+	1:
+	ChuteOpen := GVL_IO.BG_XChute1Open;
+	
+	2:
+	ChuteOpen := GVL_IO.BG_XChute2Open;
+	
+	3:
+	ChuteOpen := GVL_IO.BG_XChute3Open;
+	
+	4:
+	ChuteOpen := GVL_IO.BG_XChute4Open;
+	
+END_CASE
+
+//ChuteOpen := TRUE;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="IsBagClosed" Id="{320f768e-c7f4-4536-9d0b-a3f8f42fb3b7}">
+      <Declaration><![CDATA[METHOD PUBLIC IsBagClosed : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsBagClosed := NOT GVL_IO.BG_XBaggerReadyForFiller;
+IF (NOT IsBagClosed) THEN
+	Status.AutoBaggerStatusMsg := 'Autobagger: Bag is NOT CLOSED';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsBaggerLabelPrinted" Id="{d7ee0c32-e462-4158-82dd-c4a6c8a8537e}">
+      <Declaration><![CDATA[METHOD PUBLIC IsBaggerLabelPrinted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsBaggerLabelPrinted := NOT GVL_IO.BG_XBaggerWaitingForLabel;
+IF (NOT IsBaggerLabelPrinted) THEN
+	Status.AutoBaggerStatusMsg := 'Bagger Label Not Printed, Check Line Mode Bagger HMI & hit START';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsBaggerOK_NotFaulted" Id="{f88618e2-36cf-4346-9044-da2047005154}">
+      <Declaration><![CDATA[METHOD PUBLIC IsBaggerOK_NotFaulted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsBaggerOK_NotFaulted := GVL_IO.BG_XBaggerOKNoFault;
+IF (NOT IsBaggerOK_NotFaulted) THEN
+	Status.AutoBaggerStatusMsg := 'AutoBagger: Bagger Is Faulted, Clear Faults from Bagger HMI & hit START ';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsBaggerOpenWaitingforParts" Id="{bf1bf230-3d86-49f8-a3e5-02ec2b8d4403}">
+      <Declaration><![CDATA[METHOD PUBLIC IsBaggerOpenWaitingforParts : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsBaggerOpenWaitingforParts := GVL_IO.BG_XBaggerReadyForFiller;
+IF (NOT IsBaggerOpenWaitingforParts) THEN
+	Status.AutoBaggerStatusMsg := 'Cant Open bag, Check Bagger HMI & hit START';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsBaggerWaitingForLabel" Id="{6cd11ccc-44c6-48f7-aa9a-5cbe721ed79f}">
+      <Declaration><![CDATA[METHOD PUBLIC IsBaggerWaitingForLabel : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsBaggerWaitingForLabel := GVL_IO.BG_XBaggerWaitingForLabel;
+IF (NOT IsBaggerWaitingForLabel) THEN
+	Status.AutoBaggerStatusMsg := 'Bagger Not Waiting For Label, Check Line Mode Bagger HMI & hit START';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsBagsLowWarning" Id="{cb89ff14-cfe5-49ce-8c93-cb3e876ec860}">
+      <Declaration><![CDATA[METHOD PUBLIC IsBagsLowWarning : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsBagsLowWarning := GVL_IO.BG_XBagsLow;
+IF (NOT IsBagsLowWarning) THEN
+	Status.AutoBaggerStatusMsg := 'Bagger Low Bags Warning, Change Roll';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsFaulted" Id="{f296fb0a-3c00-4c91-aa08-e7fa37be1c1b}">
+      <Declaration><![CDATA[METHOD PUBLIC IsFaulted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (LotsData.Lot.AutoBaggerEnabled) THEN 
+	IsFaulted := (State = eAutoBaggerState.eUnknown OR State = eAutoBaggerState.eError);
+ELSE 
+	IsFaulted := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendLabel" Id="{990359d6-b8a3-4c20-bff4-49b715648c28}">
+      <Declaration><![CDATA[METHOD M_SendLabel : BOOL
+VAR_INPUT
+	isPremium : BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MAIN.fbEL6001.M_PrintLabel(isPremium);]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Ready" Id="{41b46b58-7881-46ff-a44b-dbca3f0605ba}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{8e65e3cb-bce7-41ea-abf7-548a1949160d}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[IF (LotsData.Lot.AutoBaggerEnabled) THEN
+ 	Ready := (State = eAutoBaggerState.eReady);
+ELSE
+	Ready := TRUE;	
+END_IF]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <LineIds Name="AutoBagger">
+      <LineId Id="1560" Count="2" />
+      <LineId Id="1893" Count="0" />
+      <LineId Id="1901" Count="0" />
+      <LineId Id="1894" Count="4" />
+      <LineId Id="1892" Count="0" />
+      <LineId Id="1902" Count="0" />
+      <LineId Id="1899" Count="0" />
+      <LineId Id="1563" Count="0" />
+      <LineId Id="1884" Count="0" />
+      <LineId Id="1891" Count="0" />
+      <LineId Id="1566" Count="122" />
+      <LineId Id="1882" Count="0" />
+      <LineId Id="1689" Count="63" />
+      <LineId Id="1761" Count="23" />
+      <LineId Id="1874" Count="7" />
+      <LineId Id="1873" Count="0" />
+      <LineId Id="1785" Count="69" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.Act_CloseTrapDoor">
+      <LineId Id="9" Count="3" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.Act_OpenGoodChute1">
+      <LineId Id="4" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.Act_OpenGoodChute2">
+      <LineId Id="3" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.Act_OpenPremiumChute1">
+      <LineId Id="3" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.Act_OpenPremiumChute2">
+      <LineId Id="3" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.Act_OpenTrapDoor">
+      <LineId Id="26" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="27" Count="1" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="29" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="31" Count="1" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.ACT_TriggerBaggerOFF">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.ACT_TriggerBaggerON">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.AssignStationStatusForHMI">
+      <LineId Id="9" Count="7" />
+      <LineId Id="21" Count="1" />
+      <LineId Id="40" Count="1" />
+      <LineId Id="44" Count="3" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="37" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.ChuteClosed.Get">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.ChuteOpen.Get">
+      <LineId Id="3" Count="14" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.IsBagClosed">
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="6" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.IsBaggerLabelPrinted">
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="6" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.IsBaggerOK_NotFaulted">
+      <LineId Id="5" Count="3" />
+    </LineIds>
+    <LineIds Name="AutoBagger.IsBaggerOpenWaitingforParts">
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="6" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.IsBaggerWaitingForLabel">
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="6" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.IsBagsLowWarning">
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="6" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.IsFaulted">
+      <LineId Id="11" Count="3" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.M_SendLabel">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="AutoBagger.Ready.Get">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,179 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="MAIN" Id="{2eded3ad-2e60-4d3b-b261-9759027727dc}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	byCounter : BYTE:= 1;
+	bInitialize :BOOL := TRUE;
+	fbTick, fbIOLockedTick: TON;
+	fbGetInputsFromFieldBus : GetInputsFromFieldBus;
+	fbMapLockedOutputsFromHMI : MapLockedOutputsfromHMI;
+	fbPrepareInputsForHMI : PrepareInputsDataStructureForHMI;
+	fbPrepareOutputsForHMI : PrepareOutputsDataStructureForHMI;
+	fbSetOutputsToFieldbus : SetOutputsToFieldbus;
+	fbLotLogging : LotLogging;
+	IOLocked : BOOL :=FALSE;	
+	PrevIOLocked : BOOL := FALSE;
+	fbEL6001	: FB_SerialCom;
+	fbWritePersistentData 		: WritePersistentData;
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Status.StationStauts[MM_CONST.IONIZER_HMI_STATE] := OverallStationStatus.eWaitingForParts;
+//Set the Ionizer station to be blue on the HMI screen
+
+//Logging 
+LotsData.Lot.PLCVersion := '051319 v1.1.3'; //this goes into the HMI About Box. Lot is updated more frequently.
+
+Logging.fbEventMsg();
+Logging.fbEventMsgParams();
+Logging.fbCurrTime();
+P_TextModeWrite();(* This sample program opens and writes CSV file in text mode *)
+P_TextModeWriteLot(); // this writes a lot report when end lot is written
+fbLotLogging();
+fbEL6001(TxBuffer:=GVL_IO.TxBufferEL, RxBuffer:= GVL_IO.RxBufferEL);
+IF (bInitialize) THEN
+	Logging.fbEventMsg.SendEventMsg(MsgClass := TCEVENTCLASS_STATEINFO, EventID:= Logging.IDMain_InitBegin , SourceID:= Logging.SrcMainPOU);
+	bInitialize := FALSE;
+END_IF
+
+// Magnemotion Communication 
+Stations.fbMMClient();
+// Only Accept Cmds to Magnemotion and Parse Responses from Magnemotion HLC when socket is connected.
+// To DO: Document the software architecture and timeout/error handling
+IF (Stations.fbMMClient.eState = eSOCKET_CONNECTED) THEN
+	Stations.fbMMSendMsg(fbTx:=Stations.fbMMClient.fbTx, fbLog := Stations.fbMMClient.fbLog);
+	Stations.fbMMParseRes(fbRx:=Stations.fbMMClient.fbRx, fbLog := Stations.fbMMClient.fbLog);
+	Stations.fbMMMonitor();	
+ELSE ;	
+END_IF	
+
+
+// Beckhoff Run time (XAR) will fetch all the fieldbus data and map to GVL_IO variables whereever mapping is directly addressable 
+// For the Inputs where we have to program the linking of I/O variables to the fieldbus data, we need to execute this routine once 
+// every cycle
+fbGetInputsFromFieldBus(); //Mapping of bytes into PLC variables, where such mapping is not available in I/O linking directly
+
+// Machine is E-Stopped
+// Each station will set its Current State and Next State to Unknown condition when Machine is E-Stopped
+// After Reset condition we need the operator to hit the start button and the air to be at correct pressure for each station to proceed
+IF (GVL_IO.MachineEStopped) THEN	
+;
+ELSE
+//	GVL_IO.VS_YBarrelLED := TRUE; 	// to do, change this so that the logic is handled by the respective station 
+END_IF
+
+
+IOLocked := (GVL_IO.IOLockedFromHMI <>0);
+IF (PrevIOLocked AND NOT IOLocked) THEN
+	//send all stations to Unknown State when we move from IO Locked state to IO Unlocked State.
+	ResetAllStations();	
+END_IF
+PrevIOLocked := IOLocked;
+
+IF (IOLocked) THEN  //Don't execute and PLC logic to control outputs.. however execute the temperature control logic.
+	fbMapLockedOutputsFromHMI(); // get outputs state from HMI.     
+//	GVL_IO.MM_YEnableMagneMotion := FALSE; // Unclear if this is needed, but for now we are disabling Prime Mover when I/O is locked
+    //Send Timer based Messages to the Operator HMI
+    fbIOLockedTick(IN:=TRUE, PT:= T#5M); //To Add, add CPU monitoring parameters to report out, temperature, memory etc.
+	IF (fbIOLockedTick.Q) THEN
+		Logging.fbEventMsg.SendEventMsg(MsgClass := TCEVENTCLASS_WARNING,EventID:= Logging.IDMain_Tick , SourceID:= Logging.SrcMainPOU);
+		fbIOLockedTick(IN:=FALSE);
+	END_IF (* IO Tick Timer Event*)
+ELSE  // Run normally without IO being locked
+    //Tick for Stations --- these stations do not get called when I/O is locked. They will return to Unkonwn state after I/O is again unlocked from a locked state
+	Stations.fbLoad1Sta();  // Load 1 Station which also handles Yushin Communication and Load Station Cyclinders
+	Stations.fbLoad2Sta();  // Load 2 
+	Stations.fbLoad3Sta();  // Load 3 
+	Stations.fbLoad4Sta();  // Load 4
+	Stations.fbVisionSta(); // Vision Station			 	
+	Stations.fbPistonSta();  // Piston Insert 	
+	Stations.fbCapInsertSta();	 //Cap Insert 
+	//Stations.fbGoodUnloadSta();  // Good Unload 			 
+	Stations.fbRejectSta();	 //Reject Station			
+	Stations.fbAutoBagger();
+	Stations.fbGoodULSta_1();
+	Stations.fbGoodULSta_2();
+	Stations.fbGoodULSta_3();
+	Stations.fbGoodULSta_4();
+END_IF (* If IO Locked*)
+// Run all the other stations at all times 
+// Cycle management and interlocks
+Stations.fbIB_StopRobotSta();		// Stop for Yushin Load plate inbound side
+Stations.fbOB_StopRobotSta(); // Stop for Yushin Load Plate outbound side
+Stations.fbOB_StopBeforeVisionSta(); // Stop before Vision station
+Stations.fbCycleControl();
+Stations.fbStationManager();  // Allows Vehicle Manager to trigger stations after vehicle arrives under a station
+Stations.fbRoutePlanner();  // This allows Stations to Inform Vehicle Manager processing is complete, adds logic for route planning
+	
+Stations.fbPrimeMover(); // Primve Mover
+FOR byCounter := 1 TO MM_CONST.MAX_VEHICLES BY 1 DO
+			Stations.fbVehicleManager[byCounter](VehicleID := byCounter);  // Vehicle Manager
+END_FOR
+Stations.fbBurnOffSta(); // Burn off station - handles PID control and cools of burn off this needs to run regardless of I/O Lock
+
+fbPrepareInputsForHMI(); // Send copy of Input State to the PC HMI Byte Array -- to refresh the HMI ( Note that HMI requests the refresh)
+fbPrepareOutputsForHMI(); //Send Copy of the Output State to the PC HMI Byte Array -- to refresh the HMI (Note that HMI requests the refresh)
+
+// Beckhoff Run time (XAR) will write all the fieldbus data and map to GVL_IO variables whereever mapping is directly addressable 
+// For the Output where we have to program the linking of I/O variables to the fieldbus data, we need to execute this routine once 
+// every cycle
+
+fbSetOutputstoFieldbus(); // //Mapping of bytes into Fieldbus variables, where such mapping is not available in I/O linking directly
+
+
+// A tick message to the operator logging screen 
+
+fbTick(IN:=TRUE, PT:= T#60S); //To Add, add CPU monitoring parameters to report out, temperature, memory etc.
+IF (fbTick.Q) THEN
+	Logging.fbEventMsg.SendEventMsg(MsgClass := TCEVENTCLASS_STATEINFO, EventID:= Logging.IDMain_Tick , SourceID:= Logging.SrcMainPOU);
+	fbWritePersistentData(NETID:='', PORT:=851, START:=TRUE, TMOUT:=T#1S );
+	fbTick(IN:=FALSE);
+ELSE
+	fbWritePersistentData(NETID:='', PORT:=851, START:=FALSE, TMOUT:=T#1S );
+END_IF
+Status.StationsState[MM_CONST.MAIN_CONTROL_HMI_STATE] := BOOL_TO_INT(IOLocked)+501;]]></ST>
+    </Implementation>
+    <Method Name="ResetAllStations" Id="{a9ff143a-0e9f-4736-b04e-9f859d711a56}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetAllStations : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Stations.fbLoad1Sta.ResetState();
+Stations.fbLoad2Sta.ResetState();
+Stations.fbLoad3Sta.ResetState();
+Stations.fbLoad4Sta.ResetState();
+//Stations.fbVisionSta();  // TO DO			
+Stations.fbPistonSta.ResetState();
+//Stations.fbIB_StopRobotSta();		
+Stations.fbCapInsertSta.ResetState();
+//Stations.fbGoodUnloadSta.ResetState();	
+Stations.fbGoodULSta_1.ResetState();
+Stations.fbGoodULSta_2.ResetState();
+Stations.fbGoodULSta_3.ResetState();
+Stations.fbGoodULSta_4.ResetState();	
+Stations.fbRejectSta.ResetState();
+//Stations.fbOB_StopRobotSta();
+//Stations.fbOB_StopBeforeVisionSta();
+//Stations.fbBurnOffSta();   TO DO ]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="MAIN">
+      <LineId Id="665" Count="0" />
+      <LineId Id="663" Count="1" />
+      <LineId Id="523" Count="68" />
+      <LineId Id="645" Count="0" />
+      <LineId Id="683" Count="3" />
+      <LineId Id="592" Count="35" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="MAIN.ResetAllStations">
+      <LineId Id="6" Count="8" />
+      <LineId Id="21" Count="3" />
+      <LineId Id="15" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

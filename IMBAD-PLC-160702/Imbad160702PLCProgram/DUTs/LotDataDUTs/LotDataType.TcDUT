@@ -1,0 +1,60 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <DUT Name="LotDataType" Id="{f3f529d8-d497-4d78-a766-5b4b51482758}">
+    <Declaration><![CDATA[TYPE LotDataType :
+STRUCT
+	// Coming from HMI 
+	PartNumber : STRING :='PartNumb';  
+	PartDescription: STRING :='55ccBarrel';
+	LotNumber: STRING :='LotNumb';
+	JobNumber: STRING := 'JobNumb';
+	LotDate: STRING :='DATE';
+	PistonPartNumber : STRING :='PistonPartNumb';
+	PistonLotNumber : STRING :='PistonLotNumb';
+	CapPartNumber : STRING :='CapPartNumb';
+	CapLotNumber : STRING :='CapLotNumb';
+	RawMaterialLotNumber: STRING := 'RawLotNumb';
+	Comment: STRING :='Defaults'; // Limit to 80 characters	from HMI
+	BlackConPartNumber : STRING :='Black'; 
+	
+	AutoBaggerEnabled : BOOL := TRUE;
+	QuantityInBag : BYTE := 50;
+	BarrelSize: eBarrelType := eBarrelType.Size3cc; //55cc:=0, 30cc:= 1, 10cc: = 2, 5cc: = 3, 3cc: = 4
+	BarrelSizeInt : DINT;
+	BurnOffEnabled : BOOL := TRUE;
+    BurnOffTemp : REAL := 50;
+	CapInsertEnabled: BOOL := TRUE;
+	CapTorqueSetPoint : REAL := 100;
+	GoodUnloadEnabled : BOOL := TRUE;
+	IonizerEnabled: BOOL := TRUE;
+	LoadStationEnabled: BOOL := TRUE;
+	PistonInsertEnabled : BOOL := TRUE;
+	LotInProgress: BOOL := TRUE;
+	
+	PistonStroke : REAL:= 200;
+	RejectUnloadEnabled : BOOL := TRUE;
+	VisionStationRunSelectInt: DINT :=1;
+	VisionStationRunSelect : eVisionEnableState := eVisionEnableState.DataCollectOnly; // Enabled:=1, Disabled:=0, Data Collect Only :=2
+	ShortShotMinRadius: REAL := 80;//premium max individual stain area
+	ShortShotMaxRadius: REAL := 80;//good max individual stain area
+	TotalStainAreaMaxPremium : REAL :=100;
+	TotalStainCountMaxPremium : REAL := 5;
+	TotalStainAreaMaxGood: REAL := 300;
+	TotalStainCountMaxGood : REAL := 20;
+	IndividualStainAreaMaxPremium : REAL := 80;
+	IndividualStainAreaMaxGood : REAL := 80;
+	VisionProgramNumber : DINT := 1;
+	ResetModeEnabled: BOOL := FALSE;
+	
+	
+	
+	// This is maintained by the machine
+    LotStartTime: TIME;
+	CavityCounts : ARRAY[1..CONFIG.MAX_CAVITY] OF StatusCounts;
+	PLCVersion : STRING;
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

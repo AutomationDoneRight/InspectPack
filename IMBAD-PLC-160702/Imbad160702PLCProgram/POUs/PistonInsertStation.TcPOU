@@ -1,0 +1,993 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="PistonInsertStation" Id="{a02d9d91-336e-4478-b9fd-491c85696e9b}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC PistonInsertStation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : ePistonInsertStaState := ePistonInsertStaState.eUnknown;
+	NextState : ePistonInsertStaState := ePistonInsertStaState.eUnknown;
+	ErrorReturnState : ePistonInsertStaState := ePistonInsertStaState.eUnknown;
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;
+	StateTimer : TON;
+	PartPresentTimer : TON;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//////////////////// ESTOP TO STATION DISABLED
+// If Piston Station is disabled, then we want to make sure that we have the SMC homed and not in the way of barrels
+// we also want to check if the pallet hold downs and barrel backup position are correct
+// if all above conditions are true, then we want to wait in a station disabled ready state
+////////////////// STATION DISABLED - STATION ENABLED
+// We have to go to have a piston ready for insertion, but also have operator hit start button
+/////////////////////// STATION ENABLED - STATION DISABLED
+// We have to go into disabled state
+//////////////////////// ESTOP- STATION ENABLED
+//// Follow all the logic to get the station ready
+
+IF (GVL_IO.MachineEStopped) THEN 
+	State := ePistonInsertStaState.eUnknown;
+	NextState := ePistonInsertStaState.eUnknown;
+	ErrorReturnState := ePistonInsertStaState.eUnknown;
+	Status.PistonStatusMsg:= 'PistonSta Unknown, Check AIR, E-STOP and Hit Start';
+END_IF
+
+CASE State OF
+	
+ePistonInsertStaState.eUnknown:
+    Status.PistonStatusMsg:= 'PistonSta Unknown, Check AIR, E-STOP and Hit Start';
+	
+    GVL_IO.PI_YMtrReset := FALSE; // we need a rising edge when we do a reset
+	GVL_IO.PI_YMtrSetEnable:= FALSE; // we need a rising edge when we move to the Motor Reset State in the following states
+	Act_SendEscapementtoWork();
+	IF (GVL_IO.MC_XStartPB AND GVL_IO.MC_XAirPressureOK  AND GVL_IO.MC_NotEStopped) THEN // wait for start button when powered up or PLC program restarted ( remove this "TRUE" after debug
+		ResetDwellTimer();
+		ResetStateTimer();
+		LEY_MasterReset();
+        NextState := ePistonInsertStaState.eSMCMtrReset;		
+	END_IF	
+
+ePistonInsertStaState.eSMCMtrReset:
+    DwellTimer(IN:= TRUE, PT:= T#1S);
+	IF (DwellTimer.Q) THEN
+		DwellTimer(IN:=FALSE);
+		GVL_IO.PI_YMtrReset := NOT GVL_IO.PI_YMtrReset; // toggle the Reset to clear Alarms
+	END_IF
+
+	IF(NOT GVL_IO.PI_XMtrAlarm) THEN
+		GVL_IO.PI_YMtrReset := FALSE;
+        GVL_IO.PI_YMtrSetEnable := TRUE;
+		ResetDwellTimer();
+		NextState := ePistonInsertStaState.eSMCMtrCheckEnabled; // change to check enabled
+	END_IF
+	
+	StateTimer(IN:= TRUE, PT:= T#10S);
+	IF (StateTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eSMCMtrReset;
+		Status.PistonStatusMsg:= 'Unable to Reset Piston Motor, Restart LEY controller';
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := ePistonInsertStaState.eError;		
+	END_IF
+	
+	
+
+ePistonInsertStaState.eSMCMtrCheckEnabled:
+   IF (GVL_IO.PI_XMtrServoEnabled AND NOT GVL_IO.PI_XMtrBusy AND NOT GVL_IO.PI_XMtrEStopped AND NOT GVL_IO.PI_XMtrAlarm) THEN
+	   NextState := ePistonInsertStaState.eSMCMtrSendHome;
+	   ResetDwellTimer();
+   END_IF
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eUnknown;
+		Status.PistonStatusMsg:= 'Unable to Enable Piston Motor, Restart LEY controller';
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := ePistonInsertStaState.eError;		
+	END_IF
+   
+ ePistonInsertStaState.eSMCMtrSendHome:
+	GVL_IO.PI_YMtrGoHome := TRUE;
+	IF (GVL_IO.PI_XMtrServoHomed) THEN 
+		NextState := ePistonInsertStaState.eSMCMtrHomed;
+		GVL_IO.PI_YMtrGoHome := FALSE;
+		ResetDwellTimer();
+	END_IF
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eUnknown;
+		Status.PistonStatusMsg:= 'Unable to Home Piston Motor, Clear any jams ';
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := ePistonInsertStaState.eError;		
+	END_IF   
+
+	   
+ePistonInsertStaState.eSMCMtrHomed:
+     IF (GVL_IO.PI_XMtrServoHomed AND GVL_IO.PI_XMtrServoEnabled AND NOT GVL_IO.PI_XMtrBusy (*AND GVL_IO.PI_XMtrMoveCompl*) AND GVL_IO.PI_XMtrReady) THEN
+		 NextState := ePistonInsertStaState.eInit;  // not checking tool position in IMBAD2
+		 ResetDwellTimer();	 
+	 END_IF
+	 
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eUnknown;
+		Status.PistonStatusMsg:= 'Unable to Ready Piston Motor, Restart LEY ';
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := ePistonInsertStaState.eError;		
+	END_IF   
+
+
+ePistonInsertStaState.eCheckToolPosition:
+	IF (LotsData.Lot.BarrelSize = eBarrelType.Size55cc) THEN
+		IF (TRUE OR GVL_IO.PI_XToolAt55_10_Barrel AND NOT GVL_IO.PI_XToolAt3_30_Barrel) THEN // no barrel backup 
+			 NextState := ePistonInsertStaState.eInit;
+		ELSE
+			NextState := ePistonInsertStaState.eUnknown;
+       		Status.PistonStatusMsg:= 'Incorrect Backup Location,Fix and Hit Start';
+		END_IF
+	ELSIF (LotsData.Lot.BarrelSize = eBarrelType.Size30cc) THEN
+		IF (TRUE OR NOT GVL_IO.PI_XToolAt55_10_Barrel AND GVL_IO.PI_XToolAt3_30_Barrel) THEN
+			 NextState := ePistonInsertStaState.eInit;
+		ELSE
+			NextState := ePistonInsertStaState.eUnknown;
+        	Status.PistonStatusMsg:= 'Incorrect Backup Location,Fix and Hit Start';
+		END_IF
+	ELSE 
+		NextState := ePistonInsertStaState.eUnknown;
+        Status.PistonStatusMsg:= 'Incorrect Part Selection, Start New Lot';
+	END_IF
+	
+
+ePistonInsertStaState.eInit:
+	Act_RetractBarrelBackup();    
+	Act_FreePalletHoldDown();	
+	IF (GVL_IO.PI_XPistonPresentEscapement) THEN
+		Act_SendEscapementtoWork();        
+    ELSE 
+		Act_SendEscapementToBowl();
+	END_IF		
+	ResetDwellTimer();
+	NextState := ePistonInsertStaState.eHoming;
+
+ePistonInsertStaState.eHoming:
+    IF(IsBarrelBackupRetracted() AND IsPalletHoldDownFree()) THEN   
+		ResetDwellTimer();
+	 	IF (GVL_IO.PI_YEscapementToBowl) THEN // based on what direction decided in previous state
+			NextState := ePistonInsertStaState.eMoveEscapemttoBowl;	
+		ELSE
+			NextState := ePistonInsertStaState.eMoveEscapmentToWork;
+		END_IF		
+	    IF (NOT LotsData.Lot.PistonInsertEnabled) THEN
+			NextState := ePistonInsertStaState.eDisabledReady;
+        END_IF	
+	END_IF
+	
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eInit;		
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := ePistonInsertStaState.eError;		
+	END_IF   
+
+	
+ePistonInsertStaState.eDisabledReady:
+  IF (LotsData.Lot.PistonInsertEnabled) THEN
+	  NextState := ePistonInsertStaState.eUnknown;
+  END_IF
+  IF (xTrigger) THEN
+	  NextState := ePistonInsertStaState.eDepart;
+  END_IF
+  Status.PistonStatusMsg:= 'Station Disabled and Ready';
+
+
+ePistonInsertStaState.eMoveEscapemttoBowl:
+  	Act_SendEscapementToBowl();    
+  	IF (IsEscapementAtBowl()) THEN
+		ResetDwellTimer();
+	  	NextState := ePistonInsertStaState.eEscapmentAtBowl;
+  	END_IF
+	
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eMoveEscapemttoBowl;
+		Status.PistonStatusMsg:= 'Escapement unable to move to Bowl,Stuck Pistons?';
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := ePistonInsertStaState.eError;		
+	END_IF   
+ 
+	
+	 
+ePistonInsertStaState.eEscapmentAtBowl:
+	NextState := ePistonInsertStaState.eWaitForPartAtBowl;
+	PartPresentTimer(IN:=FALSE);
+	DwellTimer(IN:=FALSE);
+	StateTimer(IN:=FALSE);
+
+ePistonInsertStaState.eWaitForPartAtBowl:
+    PartPresentTimer(IN:= GVL_IO.PI_XPistonPresentEscapement, PT := T#10MS); //uncommented FOR turnkey debug
+	//PartPresentTimer(IN:= TRUE, PT := T#10MS); //comment this out later
+    IF (PartPresentTimer.Q) THEN
+		PartPresentTimer(IN:=FALSE);
+		NextState := ePistonInsertStaState.eMoveEscapmentToWork;
+		StateTimer(IN:=FALSE);
+        ResetDwellTimer();		
+	END_IF	
+	
+    DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eMoveEscapemttoBowl;
+		Status.PistonStatusMsg:= 'Piston: No Piston Detected. Is Bowl Empty? ';
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := ePistonInsertStaState.eError;		
+	END_IF   
+
+ePistonInsertStaState.eMoveEscapmentToWork:
+ 	Act_SendEscapementtoWork();
+	IF (IsEscapementAtWork()) THEN
+		ResetDwellTimer();
+		NextState := ePistonInsertStaState.eEscapementAtWork;
+	END_IF
+	
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eMoveEscapmentToWork;
+		Status.PistonStatusMsg:= 'Escapement Slide Failed to go to Work';
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := ePistonInsertStaState.eError;		
+	END_IF   
+
+
+ePistonInsertStaState.eEscapementAtWork:	
+	NextState := ePistonInsertStaState.eReady; // We have captured a part and now sitting on top of the motor shaft waiting for the vehicle to arrive
+	
+
+ePistonInsertStaState.eReady: // vehicle arrives to station 
+	IF (xTrigger) THEN
+		Act_EngagePalletHoldDown();
+		Act_ExtendBarrelBackup();
+		ResetDwellTimer();
+        NextState := ePistonInsertStaState.ePalletHoldDownEngaged;		
+		PartsData.Status[VUT].OverallStatus := ePartStatus.eReject; //define as reject upfront, later update status	          		
+	END_IF
+	Status.PistonStatusMsg:= 'Waiting For Vehicle To Process';
+
+ePistonInsertStaState.ePalletHoldDownEngaged:
+   Act_EngagePalletHoldDown();
+   IF (IsPalletHoldDownEngaged()) THEN
+	   Act_ExtendBarrelBackup();
+	   ResetDwellTimer();
+       NextState := ePistonInsertStaState.eWaitForBarrelBackupEngaged;   
+   END_IF
+   
+   DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.ePalletHoldDownEngaged;		
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := ePistonInsertStaState.eError;		
+	END_IF   
+   
+   
+ePistonInsertStaState.eWaitForBarrelBackupEngaged:
+	IF(IsBarrelBackupExtended()) THEN
+		ResetDwellTimer();
+		NextState := ePistonInsertStaState.eFirePistonUp;
+	END_IF
+  
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.ePalletHoldDownEngaged;		
+		ResetDwellTimer();
+		ResetStateTimer();
+        NextState := ePistonInsertStaState.eError;		
+	END_IF   
+
+ePistonInsertStaState.eFirePistonUp:
+    IF (LotsData.Lot.BarrelSize = eBarrelType.Size10cc) THEN // program 1 = 10cc
+    	GVL_IO.PI_YMtrStepSelectIN0 := TRUE;
+		GVL_IO.PI_YMtrStepSelectIN1 := FALSE;
+	ELSIF (LotsData.Lot.BarrelSize = eBarrelType.Size5cc) THEN //program3 = 5 cc
+		GVL_IO.PI_YMtrStepSelectIN0 := TRUE;
+		GVL_IO.PI_YMtrStepSelectIN1 := TRUE;
+	ELSE // must be 3 cc 
+		GVL_IO.PI_YMtrStepSelectIN0 := FALSE; //program2 = 3cc
+		GVL_IO.PI_YMtrStepSelectIN1 := TRUE;
+	END_IF
+	DwellTimer(IN:=TRUE,PT:= T#20MS);
+	IF(DwellTimer.Q) THEN
+		DwellTimer(IN:=FALSE);
+		GVL_IO.PI_YMtrDriveStepTrigger:= TRUE;
+		NextState := ePistonInsertStaState.eWaitForPistonStartMovUp;
+	END_IF
+
+ePistonInsertStaState.eWaitForPistonStartMovUp:
+	 IF (NOT GVL_IO.PI_XMtrMoveCompl) THEN   //Piston has started to move up
+		 GVL_IO.PI_YMtrDriveStepTrigger:= FALSE;
+		 GVL_IO.PI_YMtrStepSelectIN0 := FALSE;
+		 GVL_IO.PI_YMtrStepSelectIN1 := FALSE;
+		 ResetDwellTimer();
+		 NextState := ePistonInsertStaState.eWaitForPistonMovDoneUp;
+	 END_IF
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eFirePistonUp;		
+		GVL_IO.PI_YMtrDriveStepTrigger:= FALSE;
+		ResetDwellTimer();
+		ResetStateTimer();
+		Status.PistonStatusMsg:= 'SMC Mtr Possibly Jammed, Lock I/O and Home Mtr';
+        NextState := ePistonInsertStaState.eError;		
+	END_IF 
+
+
+ePistonInsertStaState.eWaitForPistonMovDoneUp:
+ 	IF (GVL_IO.PI_XMtrMoveCompl) THEN
+		NextState := ePistonInsertStaState.eFirePistonDown;    //There may be a way to read piston actual position
+		ResetDwellTimer();
+		UpdatePartData();
+ 	END_IF
+ 	DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eFirePistonUp;		
+		GVL_IO.PI_YMtrDriveStepTrigger:= FALSE;
+		ResetDwellTimer();
+		ResetStateTimer();
+		Status.PistonStatusMsg:= 'SMC Mtr Possibly Jammed, Lock I/O and Home Mtr';
+        NextState := ePistonInsertStaState.eError;		
+	END_IF 
+ 
+
+ePistonInsertStaState.eFirePistonDown:
+	GVL_IO.PI_YMtrStepSelectIN0 := FALSE;
+	GVL_IO.PI_YMtrStepSelectIN1 := FALSE;
+	GVL_IO.PI_YMtrDriveStepTrigger:= TRUE;
+	ResetDwellTimer();
+	NextState := ePistonInsertStaState.eWaitForPistonStartMovDwn;
+
+ePistonInsertStaState.eWaitForPistonStartMovDwn:
+ 	IF (NOT GVL_IO.PI_XMtrMoveCompl) THEN
+		GVL_IO.PI_YMtrDriveStepTrigger:= FALSE;
+		GVL_IO.PI_YMtrStepSelectIN0 := FALSE;
+		GVL_IO.PI_YMtrStepSelectIN1 := FALSE;
+		ResetDwellTimer();
+	 	NextState := ePistonInsertStaState.eWaitForPistonMovDoneDown;
+ 	END_IF
+	
+	DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eFirePistonDown;		
+		GVL_IO.PI_YMtrDriveStepTrigger:= FALSE;
+		ResetDwellTimer();
+		ResetStateTimer();
+		Status.PistonStatusMsg:= 'SMC Mtr Possibly Jammed, Lock I/O and Home Mtr';
+        NextState := ePistonInsertStaState.eError;		
+	END_IF 
+  
+
+
+ePistonInsertStaState.eWaitForPistonMovDoneDown:	
+ 	IF (GVL_IO.PI_XMtrMoveCompl) THEN
+		NextState := ePistonInsertStaState.eRetractPalletHoldDownAndBarrel;
+		ResetDwellTimer();
+ 	END_IF
+	//Act_FreePalletHoldDown();   // removed at Turnkey because piston gets jammed
+	//Act_RetractBarrelBackup();
+	
+    DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eFirePistonDown;		
+		GVL_IO.PI_YMtrDriveStepTrigger:= FALSE;
+		ResetDwellTimer();
+		ResetStateTimer();
+		Status.PistonStatusMsg:= 'SMC Mtr Possibly Jammed, Lock I/O and Home Mtr';
+        NextState := ePistonInsertStaState.eError;		
+	END_IF 
+	
+
+ 
+ ePistonInsertStaState.eRetractPalletHoldDownAndBarrel:
+ 	Act_FreePalletHoldDown();
+	Act_RetractBarrelBackup();
+	ResetDwellTimer();
+	NextState := ePistonInsertStaState.eWaitForPalletHoldDownAndBackupRetracted; 
+ 
+ ePistonInsertStaState.eWaitForPalletHoldDownAndBackupRetracted:
+ 	IF (IsBarrelBackUpRetracted() AND IsPalletHoldDownFree()) THEN
+		ResetDwellTimer();
+		ResetStateTimer();
+		NextState := ePistonInsertStaState.eDepart;
+ 	END_IF
+    
+    DwellTimer(IN:=TRUE, PT:= T#10S);
+	IF (DwellTimer.Q) THEN
+		ErrorReturnState := ePistonInsertStaState.eRetractPalletHoldDownAndBarrel;		
+		ResetDwellTimer();
+		ResetStateTimer();
+		NextState := ePistonInsertStaState.eError;		
+	END_IF 
+  
+
+ePistonInsertStaState.eDepart:
+	StateTimer(IN:=TRUE, PT:= T#20MS);
+	IF (StateTimer.Q) THEN
+		Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.PISTON_STA, VehicleID := VUT);
+		xTrigger := FALSE;	
+		StateTimer(IN:=FALSE);
+		IF (NOT Stations.fbCycleControl.StopRequested) THEN			
+			NextState := ePistonInsertStaState.eInit;
+		ELSE 
+			NextState := ePistonInsertStaState.eStopActive;
+		END_IF
+	END_IF
+
+ePistonInsertStaState.eStopActive:
+IF (NOT Stations.fbCycleControl.StopRequested) THEN			
+	NextState := ePistonInsertStaState.eInit;
+END_IF	
+Status.PistonStatusMsg:= 'Piston Sta Cycle Stop, Hit Start'; 
+	
+ePistonInsertStaState.eError:
+	Status.StationStauts[MM_CONST.PISTON_STA_HMI_STATE] := OverallStationStatus.eError;
+	IF (GVL_IO.MC_XStartPB) THEN
+		NextState := ErrorReturnState;
+		ErrorReturnState := ePistonInsertStaState.eUnknown;
+	END_IF
+
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+	StateTimer(IN:=FALSE);
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+AssignStationStatusForHMI();]]></ST>
+    </Implementation>
+    <Action Name="Act_EngagePalletHoldDown" Id="{56c1c9e5-497b-4f57-95ac-d0fe63cd6697}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.PI_YPalletHoldDownExtend:= TRUE;
+GVL_IO.PI_YPalletHoldDownRetract := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_ExtendBarrelBackup" Id="{59448d0f-e721-42d6-9080-a9c6c45b6348}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.PI_YBarrelBackupExtend := TRUE;
+GVL_IO.PI_YBarrelBackupRetract := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_FreePalletHoldDown" Id="{4de681fd-280a-4937-b7fa-916e056184eb}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.PI_YPalletHoldDownExtend:= FALSE;
+GVL_IO.PI_YPalletHoldDownRetract := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_RetractBarrelBackup" Id="{7dd7d522-98fe-486b-a58a-f11b0f0b76ed}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.PI_YBarrelBackupExtend := FALSE;
+GVL_IO.PI_YBarrelBackupRetract := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_SendEscapementToBowl" Id="{621cc3e8-4b67-4ffe-a537-877dce92507a}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.PI_YEscapementToBowl := TRUE;
+GVL_IO.PI_YEscapementToWork := FALSE; ]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_SendEscapementtoWork" Id="{e94132a5-3478-4bac-b294-f527b2a216e6}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.PI_YEscapementToBowl := FALSE;
+GVL_IO.PI_YEscapementToWork := TRUE; ]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="AssignStationStatusForHMI" Id="{5a7326e4-aedc-44e6-b1d4-575423dcb9e7}">
+      <Declaration><![CDATA[METHOD PUBLIC AssignStationStatusForHMI : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.StationsState[MM_CONST.PISTON_STA_HMI_STATE] := State;
+IF (NOT LotsData.Lot.PistonInsertEnabled AND NOT (State = ePistonInsertStaState.eUnknown) AND NOT (State = ePistonInsertStaState.eError)) THEN
+	Status.StationStauts[MM_CONST.PISTON_STA_HMI_STATE] := OverallStationStatus.eDisabled;
+ELSE 
+	CASE State OF 
+	ePistonInsertStaState.eUnknown,ePistonInsertStaState.eError: 
+		Status.StationStauts[MM_CONST.PISTON_STA_HMI_STATE] := OverallStationStatus.eError;
+	 
+    
+    ePistonInsertStaState.eSMCMtrReset,ePistonInsertStaState.eSMCMtrCheckEnabled,ePistonInsertStaState.eSMCMtrSendHome,
+    ePistonInsertStaState.eSMCMtrHomed,ePistonInsertStaState.eInit, ePistonInsertStaState.eHoming,
+	ePistonInsertStaState.eMoveEscapemttoBowl,
+	ePistonInsertStaState.eEscapmentAtBowl,
+	ePistonInsertStaState.eMoveEscapmentToWork,
+	ePistonInsertStaState.eEscapementAtWork:
+    	Status.StationStauts[MM_CONST.PISTON_STA_HMI_STATE] := OverallStationStatus.eHoming;	
+	
+	ePistonInsertStaState.eWaitForPartAtBowl:
+		Status.StationStauts[MM_CONST.PISTON_STA_HMI_STATE] := OverallStationStatus.eWarning;
+	
+	ePistonInsertStaState.eReady:
+		Status.StationStauts[MM_CONST.PISTON_STA_HMI_STATE] := OverallStationStatus.eWaitingForParts;
+	
+	ePistonInsertStaState.ePalletHoldDownEngaged,
+	ePistonInsertStaState.eFirePistonUp,
+	ePistonInsertStaState.eSendBarrelBackupEngage,
+	ePistonInsertStaState.eWaitForPistonStartMovUp,
+	ePistonInsertStaState.eWaitForBarrelBackupEngaged,
+	ePistonInsertStaState.eWaitForPistonMovDoneUp,
+	ePistonInsertStaState.eFirePistonDown,
+	ePistonInsertStaState.eRetractPalletHoldDownAndBackup,
+	ePistonInsertStaState.eWaitForPistonStartMovDwn,
+	ePistonInsertStaState.eRetractPalletHoldDownAndBarrel,
+	ePistonInsertStaState.eWaitForPalletHoldDownAndBackupRetracted,
+	ePistonInsertStaState.eWaitForPistonMovDoneDown :
+		Status.StationStauts[MM_CONST.PISTON_STA_HMI_STATE] := OverallStationStatus.eWaitingForParts; 
+	
+    ePistonInsertStaState.eStopActive:
+	    Status.StationStauts[MM_CONST.PISTON_STA_HMI_STATE] := OverallStationStatus.eCycleStop;
+	 
+	ELSE ;
+	
+	END_CASE
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearVehicleTrigger" Id="{36dac945-390f-49e0-a2aa-0ec30dc03fc2}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsBarrelBackupExtended" Id="{77d91311-7f03-4510-a220-fe912a5a1ad4}">
+      <Declaration><![CDATA[METHOD PUBLIC IsBarrelBackupExtended : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsBarrelBackUpExtended := TRUE;  // IMBAD 2 Has No Barrel Backup
+(*
+IsBarrelBackUpExtended := GVL_IO.PI_XBarrelHoldDownExtended AND NOT GVL_IO.PI_XBarrelHoldDownHome;
+IF (NOT IsBarrelBackUpExtended) THEN
+	Status.PistonStatusMsg := 'Piston: Check Barrel Backup Sensors';
+END_IF
+*)]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsBarrelBackUpRetracted" Id="{8db7cb75-5728-4a43-9927-279eb0e83ff3}">
+      <Declaration><![CDATA[METHOD PUBLIC IsBarrelBackUpRetracted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsBarrelBackUpRetracted := TRUE;  // IMBAD 2 has no Barrel Backup
+(* 
+IsBarrelBackUpRetracted := NOT GVL_IO.PI_XBarrelHoldDownExtended AND GVL_IO.PI_XBarrelHoldDownHome;
+IF (NOT IsBarrelBackUpRetracted) THEN
+	Status.PistonStatusMsg := 'Piston: Check Barrel Backup Sensors';
+END_IF
+*)]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsEscapementAtBowl" Id="{7c0fa6e7-01d9-41af-b14b-987e8a39ba3d}">
+      <Declaration><![CDATA[METHOD PUBLIC IsEscapementAtBowl : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsEscapementAtBowl := (GVL_IO.PI_XEscapementAtBowl);// AND NOT GVL_IO.PI_XEscapementAtInsertLoc);
+IF (NOT IsEscapementAtBowl) THEN
+	Status.PistonStatusMsg := 'Piston: Check Escapment Sensors';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsEscapementAtWork" Id="{a9c38715-9e01-464f-819c-9ca739f09f45}">
+      <Declaration><![CDATA[METHOD PUBLIC IsEscapementAtWork : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsEscapementAtWork := ((*NOT GVL_IO.PI_XEscapementAtBowl AND *)GVL_IO.PI_XEscapementAtInsertLoc);
+IF (NOT IsEscapementAtWork) THEN
+	Status.PistonStatusMsg := 'Piston: Check Escapment Sensors';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsFaulted" Id="{f60b070c-dad7-45f0-ad11-b5b8e16bc359}">
+      <Declaration><![CDATA[METHOD PUBLIC IsFaulted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsFaulted := (State = ePistonInsertStaState.eUnknown OR State = ePistonInsertStaState.eError);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownEngaged" Id="{30c9cd93-0b07-407c-853e-2e9026dbe0f7}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownEngaged : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownEngaged := (NOT GVL_IO.PI_XPalletHoldDownHome (*AND GVL_IO.PI_XPalletHoldDownExtended*));
+IF (NOT IsPalletHoldDownEngaged) THEN
+	Status.PistonStatusMsg := 'Piston: Check Pallet Hold Down'; 
+END_IF ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownFree" Id="{09776c1e-b255-45db-b025-072113e799b8}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownFree : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownFree := (GVL_IO.PI_XPalletHoldDownHome AND NOT GVL_IO.PI_XPalletHoldDownExtended);
+IF (NOT IsPalletHoldDownFree) THEN
+	Status.PistonStatusMsg := 'Piston: Check Pallet Hold Down'; 
+END_IF ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="LEY_MasterReset" Id="{25262eea-0509-4e29-9e49-a0894fa697ac}">
+      <Declaration><![CDATA[METHOD PUBLIC LEY_MasterReset : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[GVL_IO.PI_YMtrReset := TRUE;
+GVL_IO.PI_YMtrSetEnable:= TRUE;
+GVL_IO.PI_YMtrDriveStepTrigger := FALSE;
+GVL_IO.PI_YMtrHoldMove := FALSE;
+GVL_IO.PI_YMtrGoHome := FALSE;
+GVL_IO.PI_YMtrJogNeg := FALSE;
+GVL_IO.PI_YMtrJogPos := FALSE;
+GVL_IO.PI_YMtrSwitchJogInch := FALSE;
+GVL_IO.PI_YMtrStepSelectIN0:= FALSE;
+GVL_IO.PI_YMtrStepSelectIN1:= FALSE;
+GVL_IO.PI_YMtrStepSelectIN2:= FALSE;
+GVL_IO.PI_YMtrStepSelectIN3:= FALSE;
+GVL_IO.PI_YMtrStepSelectIN4:= FALSE;
+GVL_IO.PI_YMtrStepSelectIN5:= FALSE;		
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Ready" Id="{eafe2669-ae84-4b00-8e99-42736ebd354a}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{b1577c0a-e4ac-4d5d-9b28-6eaf8f39781e}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[IF (LotsData.Lot.PistonInsertEnabled) THEN
+	Ready := (State = ePistonInsertStaState.eReady);
+ELSE
+    Ready := (State = ePistonInsertStaState.eDisabledReady);
+END_IF	]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Action Name="ResetDwellTimer" Id="{154bc63a-2b0d-4c6d-a076-47fb7f7725a8}">
+      <Implementation>
+        <ST><![CDATA[DwellTimer(IN:=FALSE);
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="ResetState" Id="{36e9b148-74e7-48b7-83f7-a3e19f3ec41f}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetState : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	State := ePistonInsertStaState.eUnknown;
+	NextState := ePistonInsertStaState.eUnknown;]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="ResetStateTimer" Id="{8e6b54b2-f47b-49a0-ba67-4d758d0f314b}">
+      <Implementation>
+        <ST><![CDATA[StateTimer(IN:=FALSE);]]></ST>
+      </Implementation>
+    </Action>
+    <Property Name="Trigger" Id="{52097ca3-d6f0-48ee-8cdf-03782f2030d0}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{0d134f10-d65f-44d9-9c3b-7f8c65fed1e4}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="UpdatePartData" Id="{dc1dfcab-6b7c-4e28-986b-ce41d7c1cf6b}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdatePartData : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[PartsData.Status[VUT].OverallStatus := ePartStatus.ePistonInserted;
+PartsData.Status[VUT].PistonStroke := GVL_IO.PI_XMtrCurrPos;
+PartsData.Status[VUT].PistonPass := TRUE;
+PartsData.Status[VUT].PistonInsertTime := SYSTEMTIME_TO_STRING(Logging.fbCurrTime.systemTime);]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="VehicleUnderTest" Id="{97a15262-4287-4cb1-b64a-cd54823e6458}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{0ab11653-eb63-444f-81d2-17dc557f5264}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{9300343e-c948-4058-9a47-adccda4342a7}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="PistonInsertStation">
+      <LineId Id="973" Count="13" />
+      <LineId Id="1477" Count="0" />
+      <LineId Id="987" Count="6" />
+      <LineId Id="1495" Count="0" />
+      <LineId Id="1494" Count="0" />
+      <LineId Id="994" Count="1" />
+      <LineId Id="997" Count="1" />
+      <LineId Id="1499" Count="0" />
+      <LineId Id="1510" Count="0" />
+      <LineId Id="1496" Count="0" />
+      <LineId Id="999" Count="0" />
+      <LineId Id="1007" Count="1" />
+      <LineId Id="1509" Count="0" />
+      <LineId Id="1024" Count="7" />
+      <LineId Id="1512" Count="0" />
+      <LineId Id="1032" Count="1" />
+      <LineId Id="1497" Count="1" />
+      <LineId Id="1501" Count="1" />
+      <LineId Id="1504" Count="1" />
+      <LineId Id="1508" Count="0" />
+      <LineId Id="1507" Count="0" />
+      <LineId Id="1503" Count="0" />
+      <LineId Id="1500" Count="0" />
+      <LineId Id="1039" Count="4" />
+      <LineId Id="1521" Count="0" />
+      <LineId Id="1044" Count="0" />
+      <LineId Id="1520" Count="0" />
+      <LineId Id="1514" Count="5" />
+      <LineId Id="1513" Count="0" />
+      <LineId Id="1511" Count="0" />
+      <LineId Id="1051" Count="0" />
+      <LineId Id="1054" Count="3" />
+      <LineId Id="1522" Count="0" />
+      <LineId Id="1058" Count="0" />
+      <LineId Id="1523" Count="6" />
+      <LineId Id="1059" Count="0" />
+      <LineId Id="1074" Count="4" />
+      <LineId Id="1530" Count="0" />
+      <LineId Id="1079" Count="0" />
+      <LineId Id="1531" Count="0" />
+      <LineId Id="1533" Count="6" />
+      <LineId Id="1532" Count="0" />
+      <LineId Id="1087" Count="24" />
+      <LineId Id="1541" Count="0" />
+      <LineId Id="1115" Count="1" />
+      <LineId Id="1118" Count="1" />
+      <LineId Id="1121" Count="0" />
+      <LineId Id="1543" Count="0" />
+      <LineId Id="1122" Count="3" />
+      <LineId Id="1553" Count="0" />
+      <LineId Id="1128" Count="8" />
+      <LineId Id="1544" Count="0" />
+      <LineId Id="1546" Count="2" />
+      <LineId Id="1550" Count="2" />
+      <LineId Id="1545" Count="0" />
+      <LineId Id="1148" Count="13" />
+      <LineId Id="1163" Count="0" />
+      <LineId Id="1565" Count="0" />
+      <LineId Id="1164" Count="1" />
+      <LineId Id="1556" Count="0" />
+      <LineId Id="1558" Count="6" />
+      <LineId Id="1557" Count="0" />
+      <LineId Id="1177" Count="0" />
+      <LineId Id="1555" Count="0" />
+      <LineId Id="1178" Count="8" />
+      <LineId Id="1720" Count="0" />
+      <LineId Id="1684" Count="0" />
+      <LineId Id="1187" Count="0" />
+      <LineId Id="1190" Count="1" />
+      <LineId Id="1575" Count="0" />
+      <LineId Id="1193" Count="0" />
+      <LineId Id="1567" Count="0" />
+      <LineId Id="1574" Count="0" />
+      <LineId Id="1568" Count="5" />
+      <LineId Id="1200" Count="3" />
+      <LineId Id="1576" Count="0" />
+      <LineId Id="1206" Count="0" />
+      <LineId Id="1578" Count="2" />
+      <LineId Id="1582" Count="6" />
+      <LineId Id="1581" Count="0" />
+      <LineId Id="1220" Count="8" />
+      <LineId Id="1589" Count="0" />
+      <LineId Id="1591" Count="0" />
+      <LineId Id="1590" Count="0" />
+      <LineId Id="1233" Count="1" />
+      <LineId Id="1241" Count="3" />
+      <LineId Id="1605" Count="0" />
+      <LineId Id="1592" Count="0" />
+      <LineId Id="1594" Count="1" />
+      <LineId Id="1248" Count="0" />
+      <LineId Id="1603" Count="1" />
+      <LineId Id="1597" Count="1" />
+      <LineId Id="1600" Count="2" />
+      <LineId Id="1261" Count="4" />
+      <LineId Id="1606" Count="0" />
+      <LineId Id="1266" Count="1" />
+      <LineId Id="1607" Count="0" />
+      <LineId Id="1613" Count="0" />
+      <LineId Id="1608" Count="4" />
+      <LineId Id="1268" Count="0" />
+      <LineId Id="1281" Count="7" />
+      <LineId Id="1701" Count="2" />
+      <LineId Id="1289" Count="12" />
+      <LineId Id="1620" Count="0" />
+      <LineId Id="1302" Count="1" />
+      <LineId Id="1614" Count="2" />
+      <LineId Id="1621" Count="0" />
+      <LineId Id="1617" Count="1" />
+      <LineId Id="1622" Count="0" />
+      <LineId Id="1619" Count="0" />
+      <LineId Id="1304" Count="0" />
+      <LineId Id="1316" Count="4" />
+      <LineId Id="1631" Count="0" />
+      <LineId Id="1321" Count="1" />
+      <LineId Id="1623" Count="7" />
+      <LineId Id="1323" Count="0" />
+      <LineId Id="1335" Count="5" />
+      <LineId Id="1632" Count="0" />
+      <LineId Id="1341" Count="6" />
+      <LineId Id="1643" Count="0" />
+      <LineId Id="1348" Count="1" />
+      <LineId Id="1633" Count="0" />
+      <LineId Id="1635" Count="7" />
+      <LineId Id="1634" Count="0" />
+      <LineId Id="1350" Count="0" />
+      <LineId Id="1363" Count="4" />
+      <LineId Id="1644" Count="0" />
+      <LineId Id="1368" Count="0" />
+      <LineId Id="1737" Count="1" />
+      <LineId Id="1646" Count="0" />
+      <LineId Id="1654" Count="0" />
+      <LineId Id="1647" Count="6" />
+      <LineId Id="1645" Count="0" />
+      <LineId Id="1369" Count="0" />
+      <LineId Id="1381" Count="2" />
+      <LineId Id="1387" Count="0" />
+      <LineId Id="1655" Count="1" />
+      <LineId Id="1388" Count="3" />
+      <LineId Id="1657" Count="0" />
+      <LineId Id="1667" Count="0" />
+      <LineId Id="1392" Count="1" />
+      <LineId Id="1658" Count="0" />
+      <LineId Id="1666" Count="0" />
+      <LineId Id="1659" Count="1" />
+      <LineId Id="1662" Count="2" />
+      <LineId Id="1394" Count="0" />
+      <LineId Id="1406" Count="21" />
+      <LineId Id="1457" Count="3" />
+      <LineId Id="1455" Count="0" />
+      <LineId Id="1428" Count="10" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.Act_EngagePalletHoldDown">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.Act_ExtendBarrelBackup">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.Act_FreePalletHoldDown">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.Act_RetractBarrelBackup">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.Act_SendEscapementToBowl">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.Act_SendEscapementtoWork">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.AssignStationStatusForHMI">
+      <LineId Id="66" Count="42" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.ClearVehicleTrigger">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.IsBarrelBackupExtended">
+      <LineId Id="9" Count="1" />
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="11" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.IsBarrelBackUpRetracted">
+      <LineId Id="10" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="2" />
+      <LineId Id="6" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.IsEscapementAtBowl">
+      <LineId Id="5" Count="3" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.IsEscapementAtWork">
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.IsFaulted">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.IsPalletHoldDownEngaged">
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.IsPalletHoldDownFree">
+      <LineId Id="5" Count="1" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.LEY_MasterReset">
+      <LineId Id="6" Count="13" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.Ready.Get">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.ResetDwellTimer">
+      <LineId Id="1" Count="1" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.ResetState">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.ResetStateTimer">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.UpdatePartData">
+      <LineId Id="6" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="PistonInsertStation.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_VehicleStatusHMI" Id="{39f33585-1c69-4dcd-98be-c3e7d51dadaa}">
+    <Declaration><![CDATA[TYPE ST_VehicleStatusHMI :
+STRUCT  
+  VehicleStatusBytes  : ARRAY[0..20] OF BYTE;
+    (*
+	VehicleID			:	UINT; // 2 bytes
+	VehiclePresent		:	BYTE; // 1 byte 
+	PathID				:	UINT; // 2 bytes 
+	DestinationPathID	:	UINT; // 2 bytes
+	VehiclePos			: 	REAL; // 4 bytes
+	Velocity			: 	REAL; // 4 bytes 
+	VehicleCmdType		: 	BYTE; // 1 byte
+	VehicleFlags		: 	BYTE; // 1 byte
+	VehicleCmdPos		: 	REAL; // 4 bytes
+	*)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <POU Name="LotLogging" Id="{5cf7cc70-e7e4-43f5-9ece-da902bcdcb94}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC LotLogging
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	PrevLotInProgress : BOOL;
+	TimeToLogLot : TON;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (NOT LotsData.Lot.LotInProgress) AND PrevLotInProgress THEN
+	// create a lot report here and store it
+	P_TextModeWriteLot.WriteData := TRUE;	   
+END_IF
+PrevLotInProgress := LotsData.Lot.LotInProgress;
+]]></ST>
+    </Implementation>
+    <LineIds Name="LotLogging">
+      <LineId Id="39" Count="1" />
+      <LineId Id="53" Count="2" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

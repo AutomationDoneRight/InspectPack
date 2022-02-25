@@ -1,0 +1,580 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="CapInsertStation" Id="{81c9b069-8f42-4f4e-84c1-86db7f85b7eb}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC CapInsertStation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : eCapInsertStaState := eCapInsertStaState.eUnknown;
+	NextState : eCapInsertStaState := eCapInsertStaState.eUnknown;
+	ErrorReturnState :  eCapInsertStaState := eCapInsertStaState.eUnknown;
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;		
+	StateTimer : TON;
+	PartPresentTimer : TON;
+	CapInstallRetries : BYTE :=0;
+	CapPickUpRetries : BYTE := 0;
+	CapTorqueTime : TIME := T#250MS;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[/// Cap station can be either Disabled or Enabled
+// If Disabled, then we need to be in a state such that it is disabled but will not cause any obstacles. 
+// Either in Disabled - Ready or Enabled- Ready, provide a way to account for Station enable change
+
+IF (GVL_IO.MachineEStopped) THEN 
+	State := eCapInsertStaState.eUnknown;
+	NextState := eCapInsertStaState.eUnknown;	
+END_IF
+
+CASE State OF
+
+eCapInsertStaState.eUnknown:
+	   IF (GVL_IO.MC_XStartPB AND GVL_IO.MC_XAirPressureOK AND GVL_IO.MC_NotEStopped) THEN // wait for start button when powered up or PLC program restarted
+		 ResetDwellTimer();	
+         NextState := eCapInsertStaState.eHoming;	              
+	   END_IF
+	ACT_RetractSlide();
+	ACT_RetractPalletHoldDown();
+	Status.CapStatusMsg:= 'CapSta Unknown,Check Air/E-STOP THEN Hit Start';
+
+eCapInsertStaState.eHoming:
+    Status.StationStauts[MM_CONST.CAP_STA_HMI_STATE] := OverallStationStatus.eHoming;
+	Status.CapStatusMsg:= 'Cap Station Homing';
+	
+	ACT_RetractSlide();
+	ACT_RetractPalletHoldDown();
+	DwellTimer(IN:=TRUE, PT:= T#10S);	
+	IF (IsPalletHoldDownRetracted() AND IsSlideRetracted()) THEN
+		ResetDwellTimer();	
+		IF (NOT LotsData.Lot.CapInsertEnabled) THEN
+			NextState :=  eCapInsertStaState.eDisabledReady;			
+        ELSE 
+            NextState :=  eCapInsertStaState.eWaitForVehicleTrigger;
+		END_IF
+	END_IF
+    IF (DwellTimer.Q) THEN
+		ResetDwellTimer();
+		NextState := eCapInsertStaState.eError;
+		ErrorReturnState := eCapInsertStaState.eHoming;		
+	END_IF
+	
+	
+
+eCapInsertStaState.eDisabledReady:
+	ACT_RetractSlide();
+	ACT_RetractPalletHoldDown();
+	IF (LotsData.Lot.CapInsertEnabled) THEN 
+		NextState := eCapInsertStaState.eUnknown; // force the operator to hit the start button if station is enabled.
+	END_IF
+	IF (xTrigger) THEN // vehicles that have been previously commanded to come here before station was disabled 
+		NextState := eCapInsertStaState.eDepart;
+	END_IF
+	Status.StationStauts[MM_CONST.CAP_STA_HMI_STATE] := OverallStationStatus.eDisabled;
+	Status.CapStatusMsg:= 'Cap Station Disabled and Clear for pallets to move';
+	
+	
+eCapInsertStaState.eWaitForVehicleTrigger:
+  
+	IF (xTrigger) THEN //XTrigger is signaled when part arrives under the station
+		NextState := eCapInsertStaState.ePalletHoldDownGoingDown;	
+	    PartsData.Status[VUT].OverallStatus := ePartStatus.eReject; 		
+		ResetDwellTimer();
+	END_IF
+	
+	Status.StationStauts[MM_CONST.CAP_STA_HMI_STATE] := OverallStationStatus.eWaitingForParts;
+	Status.CapStatusMsg:= 'Cap Station Waiting For Parts';
+
+eCapInsertStaState.ePalletHoldDownGoingDown:
+	ACT_EngagePalletHoldDown();
+	IF (IsPalletHoldDownExtended()) THEN
+		   NextState := eCapInsertStaState.ePalletHoldDownExtended;		 
+           ResetDwellTimer();  
+	   END_IF
+	DwellTimer(IN:=TRUE, PT:= T#10S); // give a message out every 10 seconds
+	IF (DwellTimer.Q) THEN
+		ResetDwellTimer();
+		NextState := eCapInsertStaState.eError;
+		ErrorReturnState := eCapInsertStaState.ePalletHoldDownGoingDown;			
+	END_IF
+	
+	Status.StationStauts[MM_CONST.CAP_STA_HMI_STATE] := OverallStationStatus.eRunning;
+	Status.CapStatusMsg:= 'Cap Cycle In Progress';
+	
+eCapInsertStaState.ePalletHoldDownExtended:
+   DwellTimer(IN:=TRUE, PT:= T#250MS);
+   IF (DwellTimer.Q) THEN 
+	   ResetDwellTimer();
+       NextState := eCapInsertStaState.eCapSlideGoingDown;
+   END_IF
+
+eCapInsertStaState.eCapSlideGoingDown:
+   ACT_ExtendSlide();
+   IF (NOT IsSlideRetracted()) THEN 
+	   NextState := eCapInsertStaState.eCapSlideExtended;
+	   ResetDwellTimer();
+   END_IF
+   DwellTimer(IN:=TRUE, PT:= T#5S); // give a message out every 10 seconds
+	IF (DwellTimer.Q) THEN
+		ResetDwellTimer();
+		Act_RetractSlide();  // Not wanting to spin the cap station if case of time out
+		NextState := eCapInsertStaState.eError;
+		ErrorReturnState := eCapInsertStaState.eCapSlideGoingDown;			
+	END_IF
+
+eCapInsertStaState.eCapSlideExtended:
+   DwellTimer(IN:=TRUE, PT:= CapTorqueTime);
+   IF (DwellTimer.Q OR IsSlideExtended()) THEN 
+	   ResetDwellTimer();
+	   UpdatePartData();	   
+       NextState := eCapInsertStaState.eCapSlideGoingUp;
+   END_IF
+
+ eCapInsertStaState.eCapSlideGoingUp:
+   ACT_RetractSlide();
+   ResetDwellTimer();
+   NextState := eCapInsertStaState.eCapSlideUp;
+   
+eCapInsertStaState.eCapSlideUp:
+    IF (IsSlideRetracted()) THEN
+	   ResetDwellTimer();
+	   NextState := eCapInsertStaState.ePalletHoldDownGoingUp;
+   END_IF
+   
+    DwellTimer(IN:=TRUE, PT:= T#10S); 
+	IF (DwellTimer.Q) THEN
+		ResetDwellTimer();
+		NextState := eCapInsertStaState.eError;
+		ErrorReturnState := eCapInsertStaState.eCapSlideGoingUp;			
+	END_IF
+   
+eCapInsertStaState.ePalletHoldDownGoingUp:
+	ACT_RetractPalletHoldDown();
+	ResetDwellTimer();
+	NextState := eCapInsertStaState.ePalletHoldDownUp;
+
+eCapInsertStaState.ePalletHoldDownUp:
+  
+   IF (IsPalletHoldDownRetracted()) THEN
+	   ResetDwellTimer();
+	   NextState := eCapInsertStaState.eDepart;
+   END_IF 
+    DwellTimer(IN:=TRUE, PT:= T#10S); // give a message out every 10 seconds
+	IF (DwellTimer.Q) THEN
+		ResetDwellTimer();
+		NextState := eCapInsertStaState.eError;
+		ErrorReturnState := eCapInsertStaState.ePalletHoldDownGoingUp;			
+	END_IF
+
+
+eCapInsertStaState.eDepart:
+	Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.CAP_STA, VehicleID := VUT);
+	xTrigger := FALSE; // Now that we have sent a vehicle out, we should not work on it anymore 
+    IF (Stations.fbCycleControl.StopRequested) THEN		
+		NextState := eCapInsertStaState.eStopActive;
+	ELSE
+		NextState := eCapInsertStaState.eHoming;
+	END_IF
+
+eCapInsertStaState.eStopActive:
+IF (NOT Stations.fbCycleControl.StopRequested) THEN		
+		NextState := eCapInsertStaState.eHoming;
+END_IF	
+    Status.StationStauts[MM_CONST.CAP_STA_HMI_STATE] := OverallStationStatus.eCycleStop;	
+    Status.CapStatusMsg:= 'Cap Stop Active, Press Start to Run';
+	
+eCapInsertStaState.eError:
+	Status.StationStauts[MM_CONST.CAP_STA_HMI_STATE] := OverallStationStatus.eError;
+	IF (GVL_IO.MC_XStartPB) THEN
+		NextState := ErrorReturnState;
+		ErrorReturnState := eCapInsertStaState.eUnknown;
+	END_IF
+	
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+	StateTimer(IN:=FALSE);
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+
+]]></ST>
+    </Implementation>
+    <Action Name="ACT_EngagePalletHoldDown" Id="{95141e64-78f7-4867-bf7b-5bed44ebbacc}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.CP_YPalletHoldDownExtend := TRUE;
+GVL_IO.CP_YPalletHoldDownRetract := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="ACT_ExtendSlide" Id="{1d578825-4866-4394-8f8f-fa56dc169ceb}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.CP_YCapSlideExtend := TRUE;
+GVL_IO.CP_YCapSlideRetract := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="ACT_RetractPalletHoldDown" Id="{459630e6-80b4-4310-a27c-d15b3a660d34}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.CP_YPalletHoldDownExtend := FALSE;
+GVL_IO.CP_YPalletHoldDownRetract := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="ACT_RetractSlide" Id="{fa2221e9-2918-483a-995a-ca1615d630ca}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.CP_YCapSlideExtend := FALSE;
+GVL_IO.CP_YCapSlideRetract := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="ClearVehicleTrigger" Id="{989176d5-bf81-42c2-a0c0-8a0eacb996bc}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsFaulted" Id="{f2bd33d3-6b53-4212-a61d-4ad059b85326}">
+      <Declaration><![CDATA[METHOD PUBLIC IsFaulted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (LotsData.Lot.CapInsertEnabled) THEN 
+	IsFaulted := (State = eCapInsertStaState.eUnknown OR State = eCapInsertStaState.eError);
+ELSE 
+	IsFaulted := FALSE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownExtended" Id="{73fe6c18-868c-43aa-bb67-6b2b57ebf00e}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownExtended : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownExtended := (GVL_IO.CP_XPalletHoldDownExtended AND NOT GVL_IO.CP_XPalletHoldDownHome);
+IF (NOT IsPalletHoldDownExtended) THEN 
+	Status.CapStatusMsg := 'Cap Station: Check Pallet HoldDown Sensors'; 
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownRetracted" Id="{fa3344f9-dc29-4857-adab-21ba290392e4}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownRetracted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownRetracted := (NOT GVL_IO.CP_XPalletHoldDownExtended AND GVL_IO.CP_XPalletHoldDownHome);
+IF (NOT IsPalletHoldDownRetracted) THEN 
+	Status.CapStatusMsg := 'Cap Station: Check Pallet HoldDown Sensors'; 
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsSlideExtended" Id="{74ad416d-3a39-497e-ad01-365b5f014f7f}">
+      <Declaration><![CDATA[METHOD IsSlideExtended : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsSlideExtended := (GVL_IO.CP_XCapSlideExtended AND NOT GVL_IO.CP_XCapSlideRetracted);
+IF (NOT IsSlideExtended) THEN 
+	Status.CapStatusMsg := 'Cap Station: Check Slide Sensors'; 
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsSlideRetracted" Id="{02fc8f15-02f2-4aec-843b-2d256722b895}">
+      <Declaration><![CDATA[METHOD PUBLIC IsSlideRetracted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//IsSlideRetracted := TRUE; //turnkey slide removed
+
+IsSlideRetracted := (NOT GVL_IO.CP_XCapSlideExtended AND GVL_IO.CP_XCapSlideRetracted);
+IF (NOT IsSlideRetracted) THEN 
+	Status.CapStatusMsg := 'Cap Station: Check Slide Sensors'; 
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Ready" Id="{a05d8b61-4f3b-45b3-8057-31455b12851f}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{34333ac7-2221-4d33-a374-d65e0015b754}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[IF (LotsData.Lot.CapInsertEnabled) THEN
+ Ready := (State = eCapInsertStaState.eWaitForVehicleTrigger);
+ELSE
+	Ready := (State = eCapInsertStaState.eDisabledReady);	//we removed the physical cap station on 10/17 
+END_IF]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Action Name="ResetDwellTimer" Id="{6db09a20-8cd6-4a84-bd68-f0501f569845}">
+      <Implementation>
+        <ST><![CDATA[DwellTimer(IN:=FALSE);]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="ResetState" Id="{75773aca-2a2e-44f3-9965-4b9bb1aa8777}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetState : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	State := eCapInsertStaState.eUnknown;
+	NextState := eCapInsertStaState.eUnknown;
+	ErrorReturnState := eCapInsertStaState.eUnknown;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Trigger" Id="{2f10ab5f-92bd-4ae2-9f5b-d857e3c1dacd}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{2fda31bd-35dc-4d46-bd9d-a929e6e758a0}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="UpdatePartData" Id="{ef3d3634-ab22-4402-bff7-d14f68097d26}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdatePartData : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF ( NOT IsSlideExtended()) THEN
+	PartsData.Status[VUT].OverallStatus := ePartStatus.eCapInserted;
+	PartsData.Status[VUT].CapPass := TRUE;
+	PartsData.Status[VUT].CapInsertTime := SYSTEMTIME_TO_STRING(Logging.fbCurrTime.systemTime);	
+ELSE // there is no cap
+	PartsData.Status[VUT].OverallStatus := ePartStatus.eReject;
+	PartsData.Status[VUT].CapPass := FALSE;
+	PartsData.Status[VUT].CapInsertTime := SYSTEMTIME_TO_STRING(Logging.fbCurrTime.systemTime);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="VehicleUnderTest" Id="{1253488d-acf7-452b-bf65-0fa3c66dae26}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{0c78b70f-f938-41af-a1a7-0a125494ecd7}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{c601952b-332a-4ce3-be39-06cc9be0ac8b}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="CapInsertStation">
+      <LineId Id="1718" Count="1" />
+      <LineId Id="1586" Count="0" />
+      <LineId Id="1576" Count="0" />
+      <LineId Id="891" Count="1" />
+      <LineId Id="1668" Count="0" />
+      <LineId Id="894" Count="6" />
+      <LineId Id="1725" Count="0" />
+      <LineId Id="901" Count="0" />
+      <LineId Id="907" Count="0" />
+      <LineId Id="1722" Count="0" />
+      <LineId Id="908" Count="0" />
+      <LineId Id="913" Count="1" />
+      <LineId Id="1788" Count="0" />
+      <LineId Id="1819" Count="1" />
+      <LineId Id="918" Count="0" />
+      <LineId Id="1723" Count="0" />
+      <LineId Id="1726" Count="0" />
+      <LineId Id="920" Count="0" />
+      <LineId Id="1737" Count="0" />
+      <LineId Id="1731" Count="1" />
+      <LineId Id="1734" Count="1" />
+      <LineId Id="1728" Count="1" />
+      <LineId Id="1727" Count="0" />
+      <LineId Id="921" Count="0" />
+      <LineId Id="1739" Count="1" />
+      <LineId Id="924" Count="0" />
+      <LineId Id="1789" Count="1" />
+      <LineId Id="925" Count="0" />
+      <LineId Id="1590" Count="0" />
+      <LineId Id="1593" Count="0" />
+      <LineId Id="1741" Count="0" />
+      <LineId Id="1595" Count="1" />
+      <LineId Id="1600" Count="2" />
+      <LineId Id="1671" Count="0" />
+      <LineId Id="1792" Count="0" />
+      <LineId Id="1591" Count="0" />
+      <LineId Id="1787" Count="0" />
+      <LineId Id="973" Count="0" />
+      <LineId Id="1156" Count="2" />
+      <LineId Id="1394" Count="0" />
+      <LineId Id="1159" Count="1" />
+      <LineId Id="1162" Count="0" />
+      <LineId Id="1793" Count="2" />
+      <LineId Id="1170" Count="2" />
+      <LineId Id="1174" Count="1" />
+      <LineId Id="1745" Count="0" />
+      <LineId Id="1176" Count="1" />
+      <LineId Id="1179" Count="0" />
+      <LineId Id="1743" Count="1" />
+      <LineId Id="1742" Count="0" />
+      <LineId Id="1182" Count="0" />
+      <LineId Id="1188" Count="0" />
+      <LineId Id="1796" Count="2" />
+      <LineId Id="1191" Count="1" />
+      <LineId Id="1746" Count="0" />
+      <LineId Id="1748" Count="0" />
+      <LineId Id="1750" Count="0" />
+      <LineId Id="1749" Count="0" />
+      <LineId Id="1752" Count="0" />
+      <LineId Id="1747" Count="0" />
+      <LineId Id="1751" Count="0" />
+      <LineId Id="1753" Count="1" />
+      <LineId Id="1762" Count="0" />
+      <LineId Id="1755" Count="0" />
+      <LineId Id="1757" Count="2" />
+      <LineId Id="1873" Count="0" />
+      <LineId Id="1760" Count="1" />
+      <LineId Id="1756" Count="0" />
+      <LineId Id="1763" Count="4" />
+      <LineId Id="1778" Count="0" />
+      <LineId Id="1768" Count="0" />
+      <LineId Id="1194" Count="0" />
+      <LineId Id="1771" Count="0" />
+      <LineId Id="1770" Count="0" />
+      <LineId Id="1772" Count="1" />
+      <LineId Id="1845" Count="0" />
+      <LineId Id="1839" Count="1" />
+      <LineId Id="1842" Count="2" />
+      <LineId Id="1841" Count="0" />
+      <LineId Id="1846" Count="0" />
+      <LineId Id="1848" Count="4" />
+      <LineId Id="1847" Count="0" />
+      <LineId Id="1830" Count="1" />
+      <LineId Id="1836" Count="2" />
+      <LineId Id="1835" Count="0" />
+      <LineId Id="1833" Count="1" />
+      <LineId Id="1774" Count="0" />
+      <LineId Id="1776" Count="1" />
+      <LineId Id="1775" Count="0" />
+      <LineId Id="1781" Count="4" />
+      <LineId Id="1780" Count="0" />
+      <LineId Id="1779" Count="0" />
+      <LineId Id="1195" Count="0" />
+      <LineId Id="1313" Count="0" />
+      <LineId Id="1624" Count="0" />
+      <LineId Id="1623" Count="0" />
+      <LineId Id="1315" Count="0" />
+      <LineId Id="1625" Count="0" />
+      <LineId Id="1627" Count="0" />
+      <LineId Id="1626" Count="0" />
+      <LineId Id="1317" Count="0" />
+      <LineId Id="1622" Count="0" />
+      <LineId Id="1621" Count="0" />
+      <LineId Id="1628" Count="1" />
+      <LineId Id="1700" Count="0" />
+      <LineId Id="1799" Count="0" />
+      <LineId Id="1620" Count="0" />
+      <LineId Id="1318" Count="1" />
+      <LineId Id="1786" Count="0" />
+      <LineId Id="1822" Count="2" />
+      <LineId Id="1821" Count="0" />
+      <LineId Id="1825" Count="0" />
+      <LineId Id="1320" Count="9" />
+      <LineId Id="1429" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.ACT_EngagePalletHoldDown">
+      <LineId Id="1" Count="1" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.ACT_ExtendSlide">
+      <LineId Id="1" Count="1" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.ACT_RetractPalletHoldDown">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.ACT_RetractSlide">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.ClearVehicleTrigger">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.IsFaulted">
+      <LineId Id="9" Count="1" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.IsPalletHoldDownExtended">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.IsPalletHoldDownRetracted">
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.IsSlideExtended">
+      <LineId Id="9" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.IsSlideRetracted">
+      <LineId Id="12" Count="1" />
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="14" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.Ready.Get">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.ResetDwellTimer">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.ResetState">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.UpdatePartData">
+      <LineId Id="17" Count="0" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="22" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="CapInsertStation.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

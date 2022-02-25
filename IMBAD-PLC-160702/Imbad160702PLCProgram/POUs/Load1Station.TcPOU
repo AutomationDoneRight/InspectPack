@@ -1,0 +1,788 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="Load1Station" Id="{edd90e96-f383-4613-b142-3a57b2e4e8a0}" SpecialFunc="None">
+    <Declaration><![CDATA[// This Station Interacts with the Load Station Tooling as well as the Yushin Robot. It also signals the Inbound track to hold parts when the Yushin wants to engage 
+FUNCTION_BLOCK PUBLIC Load1Station
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : eLoadSta1State := eLoadSta1State.eUnknown;
+	NextState : eLoadSta1State := eLoadSta1State.eUnknown;
+	ErrorReturnState : eLoadSta1State := eLoadSta1State.eUnknown;
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;
+	LoadingComplete : BOOL := FALSE;
+	HoldVehicleAtIBStop: BOOL := FALSE;
+	StateTimer : TON;
+	YushinTimer : TON;
+	CycleNumb: INT :=0;
+	RowNumber :INT:=0;
+	SeedNumber : INT:=13;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (GVL_IO.MachineEStopped) THEN 
+	State := eLoadSta1State.eUnknown;
+	NextState := eLoadSta1State.eUnknown;	
+END_IF
+
+
+CASE State OF
+
+eLoadSta1State.eUnknown:
+	IF (GVL_IO.MC_XStartPB AND GVL_IO.MC_XAirPressureOK AND GVL_IO.MC_NotEStopped) THEN // wait for start button when powered up or PLC program restarted
+		NextState := eLoadSta1State.eInit;	   
+	END_IF	
+    IF (GVL_IO.MachineEStopped) THEN
+		Status.Load1StatusMsg:= 'Load: E-Stopped. Press Reset';
+	ELSIF (NOT GVL_IO.MC_XAirPressureOK) THEN
+		Status.Load1StatusMsg:= 'Load: No Air Pressure. Check Air Pressure/Sensor';
+	ELSE
+		Status.Load1StatusMsg:= 'Load: Reset Ok, Air OK. Press Start Button';			
+	END_IF
+    
+	Status.BurnOffIdle := TRUE;
+	
+eLoadSta1State.eInit:
+	Act_FreePalletHoldDown();
+	Act_FreePalletRelease();
+	Act_RetractPalletClose();
+	ResetDwellTimer();
+	NextState := eLoadSta1State.eHoming;	
+	
+    
+	
+
+eLoadSta1State.eHoming:
+	Status.Load1StatusMsg:= 'Load: Homing Pallet HoldDown And Release Cylinders';
+    IF (IsPalletHoldDownFree() AND IsPalletReleaseFree() AND IsPalletCloseRetracted()) THEN
+		Status.BurnOffIdle := FALSE; 
+        IF(xTrigger) THEN  //we are recovering from E-STOP or I/O Lock and haven't released prior pallets
+		 NextState := eLoadSta1State.eProcessing; 
+		ELSE
+			NextState := eLoadSta1State.eReady; //wait for all parts to show up 
+		END_IF
+        
+	END_IF
+   
+   DwellTimer(IN:= TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eLoadSta1State.eInit;	   
+   	   NextState := eLoadSta1State.eError;	
+   END_IF 
+	
+		
+
+eLoadSta1State.eReady:  //Wait here until part arrives -- this also assumes that Vehicles have arrived at LoadStation 2, 3 and 4.. To Do check and confirm this
+	Status.Load1StatusMsg:= 'Load: Waiting all four pallets to arrive';	
+    IF (xTrigger) THEN
+		NextState := eLoadSta1State.eWaitForYushinPrepareLoad;			
+		ResetDwellTimer();
+		ResetStateTimer();
+	END_IF	
+	
+eLoadSta1State.eWaitForYushinPrepareLoad:  //here is where the Yushin will signal that are parts ready to be loaded
+   IF (NOT IsPalletHoldDownFree()) THEN
+       Act_FreePalletHoldDown();
+   END_IF
+   IF (NOT IsPalletReleaseFree()) THEN
+	   Act_FreePalletRelease();
+   END_IF
+   IF (NOT IsPalletCloseRetracted()) THEN
+	   Act_RetractPalletClose();
+   END_IF
+      
+   Status.Load1StatusMsg:= 'Load: Waiting For Yushin';
+    IF (GVL_IO.YU_XPrepareToLoad (* OR TRUE*) ) THEN    //debug mode loctite  ///Turnkey shop debug added OR TRUE
+	   RowNumber := 0;
+       RowNumber.0 := GVL_IO.YU_XLocBit0;
+	   RowNumber.1 := GVL_IO.YU_XLocBit1;
+	   GVL_IO.YU_YOkToLoad := FALSE;
+	   ResetDwellTimer();
+	   HoldVehicleAtIBStop:= FALSE;  // don't even do it for row 4
+	   //NextState := eLoadSta1State.ePalletHoldDownEngage; 
+	   NextState := eLoadSta1State.ePalletReleaseRaise; //new sequence 8/5 
+	   IF (GVL_IO.YU_XLocBit1 AND GVL_IO.YU_XLocBit0) THEN //row 4 only
+		   //HoldVehicleAtIBStop:= TRUE;
+		  // NextState := eLoadSta1State.eWaitForIBTrackClear;		
+   	  END_IF
+    END_IF 
+   StateTimer(IN:=TRUE, PT:= T#90S); // give a message out every 10 seconds
+   IF (StateTimer.Q) THEN
+	   Status.BurnOffIdle := TRUE;
+   END_IF
+   
+ 
+eLoadSta1State.eWaitForIBTrackClear: // read the location bits from Yushin in this state and decide what to do with traffic stop
+	DwellTimer(IN:=IsInBoundTrackClear(), PT := T#1000MS);
+	Act_EngagePalletHoldDown(); //doing actions in parallel to speed things up
+	IF (IsPalletHoldDownEngaged()) THEN
+		Act_EngagePalletRelease();
+	END_IF
+	IF (DwellTimer.Q) THEN
+		NextState := eLoadSta1State.ePalletHoldDownEngage;
+        // NextState := eLoadSta1State.eSignalYushinOKToLoad;
+		//NextState := eLoadSta1State.eWaitForYushinToolDown;	
+		DwellTimer(IN:=FALSE);
+	END_IF
+
+eLoadSta1State.ePalletHoldDownEngage:
+	Status.BurnOffIdle := FALSE;
+	Act_EngagePalletHoldDown();
+	ResetDwellTimer();
+	NextState:= eLoadSta1State.ePalletHoldDownEngaged;
+		
+	
+eLoadSta1State.ePalletHoldDownEngaged:
+	Status.Load1StatusMsg:= 'Load: Waiting Pallet Hold Down To Be Engaged';
+	IF (IsPalletHoldDownEngaged()) THEN
+		//NextState := eLoadSta1State.ePalletReleaseRaise;  //new sequence 8/5
+		NextState := eLoadSta1State.eSignalYushinOKToLoad;
+	END_IF
+	
+   DwellTimer(IN:= TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eLoadSta1State.ePalletHoldDownEngage;	   
+   	   NextState := eLoadSta1State.eError;	
+   END_IF 
+	
+
+eLoadSta1State.ePalletReleaseRaise:
+	Act_EngagePalletRelease();
+	ResetDwellTimer();
+ 	NextState := eLoadSta1State.ePalletReleaseRaised;
+	
+eLoadSta1State.ePalletReleaseRaised:
+	Status.Load1StatusMsg:= 'Load: Waiting Pallet Release To Be Engaged';
+    IF  (IsPalletReleaseEngaged()) THEN
+		//NextState := eLoadSta1State.eSignalYushinOKToLoad;
+		NextState := eLoadSta1State.ePalletHoldDownEngage; 
+		ResetDwellTimer();
+	END_IF
+	
+   DwellTimer(IN:= TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eLoadSta1State.ePalletReleaseRaise;	   
+   	   NextState := eLoadSta1State.eError;	
+   END_IF 
+	
+eLoadSta1State.eSignalYushinOKToLoad: 
+	GVL_IO.YU_YOkToLoad := TRUE;
+	GVL_IO.YU_YAckPartsHeld := FALSE;
+	ResetDwellTimer();
+	NextState := eLoadSta1State.eWaitForYushinToolDown;
+	
+    	
+eLoadSta1State.eWaitForYushinToolDown:
+   Status.Load1StatusMsg:= 'Load: Waiting For Yushin Tool Down';
+   ///////
+   // Timer section for Turnkey debug in the shop without the robot 
+   //////
+   //DwellTimer(IN:=TRUE , PT:= T#2S);   //loctite mode 
+   
+   DwellTimer(IN:=GVL_IO.YU_XToolDown , PT:= T#250MS);   //uncomment this our at Nordson 
+   
+   IF (DwellTimer.Q) THEN
+	   GVL_IO.YU_YOkToLoad := FALSE;
+       ResetDwellTimer();   
+	   NextState := eLoadSta1State.ePalletCloseExtend;
+	   //Act_FreePalletHoldDown();	   
+   END_IF
+ 
+eLoadSta1State.ePalletCloseExtend:
+ 	Act_ExtendPalletClose();
+	ResetDwellTimer();
+	NextState := eLoadSta1State.ePalletCloseExtended;
+	
+eLoadSta1State.ePalletCloseExtended:
+    IF (IsPalletCloseExtended()) THEN
+		ResetDwellTimer();
+		NextState := eLoadSta1State.ePalletCloseRetract; 
+	END_IF
+   
+   DwellTimer(IN:= TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eLoadSta1State.ePalletCloseExtend;	   
+   	   NextState := eLoadSta1State.eError;	
+   END_IF 
+	
+eLoadSta1State.ePalletCloseRetract:
+	Act_RetractPalletClose();
+	ResetDwellTimer();
+	NextState := eLoadSta1State.ePalletCloseRetracted;
+
+eLoadSta1State.ePalletCloseRetracted:
+	 IF (IsPalletCloseRetracted()) THEN
+		ResetDwellTimer();
+		Act_FreePalletRelease();
+        NextState := eLoadSta1State.ePalletReleaseLower;	
+	END_IF	
+	
+   DwellTimer(IN:= TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eLoadSta1State.ePalletCloseRetract;	   
+   	   NextState := eLoadSta1State.eError;	
+   END_IF 
+   
+eLoadSta1State.ePalletReleaseLower:
+	Act_FreePalletRelease();
+	ResetDwellTimer();
+ 	NextState := eLoadSta1State.ePalletReleaseLowered;
+
+eLoadSta1State.ePalletReleaseLowered:
+     Status.Load1StatusMsg:= 'Load: Waiting Pallet Release To Be Free'; 
+	 IF (IsPalletReleaseFree()) THEN
+		 ResetDwellTimer();
+		 ResetStateTimer();
+		 GVL_IO.YU_YAckPartsHeld := TRUE;
+		 NextState := eLoadSta1State.eWaitForYushinToolUp;
+	 END_IF
+	
+   DwellTimer(IN:= TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eLoadSta1State.ePalletReleaseLower;	   
+   	   NextState := eLoadSta1State.eError;	
+   END_IF 
+    
+eLoadSta1State.eWaitForYushinToolUp:
+	Status.Load1StatusMsg:= 'Load: Waiting For Yushin Tool Up';
+	
+	// Timer section only added for Turnkey Debug in the shop
+    DwellTimer(IN:=(GVL_IO.YU_XToolUp AND NOT GVL_IO.YU_XToolDown ), PT := T#10MS);   //uncomment this at Nordson
+	StateTimer(IN:=TRUE, PT:= T#10S);
+	//DwellTimer(IN:=TRUE, PT:= T#100MS);  //only for Turnkey shop
+	IF (DwellTimer.Q OR StateTimer.Q) THEN
+		HoldVehicleAtIBStop:= FALSE;
+		NextState := eLoadSta1State.ePalletHoldDownFree;		
+		DwellTimer(IN:=FALSE);
+		StateTimer(IN:=FALSE);			
+	END_IF
+	
+eLoadSta1State.ePalletHoldDownFree:
+	Act_FreePalletHoldDown();
+	ResetDwellTimer();
+ 	NextState := eLoadSta1State.ePalletHoldDownFreed;
+
+	
+eLoadSta1State.ePalletHoldDownFreed:
+ 	IF (IsPalletHoldDownFree()) THEN 		
+		NextState := eLoadSta1State.eProcessing;
+		DwellTimer(IN:=FALSE);
+		StateTimer(IN:=FALSE);
+	END_IF
+	
+	DwellTimer(IN:= TRUE, PT:= T#10S);
+   	IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eLoadSta1State.ePalletHoldDownFree;	   
+   	   NextState := eLoadSta1State.eError;	
+   	END_IF 
+    
+	
+
+eLoadSta1State.eProcessing: // Load Station 1 is directing the other load stations that loading is complete.
+	Stations.fbLoad2Sta.SetRowNumber(RowLocationNumber := RowNumber);
+    Stations.fbLoad2Sta.LoadComplete := TRUE; 
+	Stations.fbLoad3Sta.SetRowNumber(RowLocationNumber := RowNumber);
+	Stations.fbLoad3Sta.LoadComplete := TRUE;
+	Stations.fbLoad4Sta.SetRowNumber(RowLocationNumber := RowNumber);
+	Stations.fbLoad4Sta.LoadComplete := TRUE;
+	Stations.fbOB_StopRobotSta.MoveToLoading := TRUE;
+    UpdatePartData();	
+	NextState := eLoadSta1State.eDepart;
+
+eLoadSta1State.eDepart:
+	Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.LOAD_1_STA, VehicleID := VUT);
+	xTrigger := FALSE;
+    IF (Stations.fbCycleControl.StopRequested) THEN
+        NextState := eLoadSta1State.eStopActive;
+    ELSE		
+		NextState := eLoadSta1State.eReady;	
+	END_IF
+
+eLoadSta1State.eStopActive:
+      Status.Load1StatusMsg:= 'Load: Stopped, Press Start';
+     IF (NOT Stations.fbCycleControl.StopRequested) THEN
+        NextState := eLoadSta1State.eReady;
+	END_IF
+	
+eLoadSta1State.eError:
+	IF (GVL_IO.MC_XStartPB) THEN
+		NextState := ErrorReturnState;
+		ErrorReturnState := eLoadSta1State.eUnknown;
+	END_IF
+
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+	StateTimer(IN:=FALSE);
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+AssignStationStatusForHMI();]]></ST>
+    </Implementation>
+    <Action Name="Act_EngagePalletHoldDown" Id="{246718ad-5e4b-4bfa-8d06-5e342fc61f5b}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.LD_YPalletHoldDownExtendHome := FALSE;
+GVL_IO.LD_YPalletHoldDownRetractEngage := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_EngagePalletRelease" Id="{1378f1f4-2925-494c-ab4b-043357e323ad}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.LD_YPalletReleaseExtend := TRUE;
+GVL_IO.LD_YPalletReleaseRetract := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_ExtendPalletClose" Id="{f879f7a0-77a2-4747-aa5f-d51b9aa3065f}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.LD_YPalletCloseExtend := TRUE;
+GVL_IO.LD_YPalletCloseRetract := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_FreePalletHoldDown" Id="{7ea0ea6b-7afa-4f61-be76-7cbb3d5b8b95}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.LD_YPalletHoldDownExtendHome := TRUE; 
+GVL_IO.LD_YPalletHoldDownRetractEngage := FALSE; ]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_FreePalletRelease" Id="{76203e81-73c0-4030-b32d-af9f6e625795}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.LD_YPalletReleaseExtend := FALSE;
+GVL_IO.LD_YPalletReleaseRetract := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_RetractPalletClose" Id="{6cbda82b-00d1-4141-bd13-8f9c6f5e820e}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.LD_YPalletCloseExtend := FALSE;
+GVL_IO.LD_YPalletCloseRetract := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="AssignStationStatusForHMI" Id="{925c4291-7f85-40f8-800d-5903bba52dc0}">
+      <Declaration><![CDATA[METHOD PUBLIC AssignStationStatusForHMI : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.StationsState[MM_CONST.LOAD_1_STA_HMI_STATE] := State;
+IF (NOT LotsData.Lot.RejectUnloadEnabled) THEN
+	Status.StationStauts[MM_CONST.LOAD_1_STA_HMI_STATE] := OverallStationStatus.eDisabled;
+ELSE 
+	CASE State OF 
+	eLoadSta1State.eUnknown,eLoadSta1State.eError,eLoadSta1State.ePalletReleaseLowered:
+		Status.StationStauts[MM_CONST.LOAD_1_STA_HMI_STATE] := OverallStationStatus.eError;
+    eLoadSta1State.eInit,
+	eLoadSta1State.eHoming:
+	    Status.StationStauts[MM_CONST.LOAD_1_STA_HMI_STATE] := OverallStationStatus.eHoming;
+		
+	eLoadSta1State.eReady:
+	     Status.StationStauts[MM_CONST.LOAD_1_STA_HMI_STATE] := OverallStationStatus.eWaitingForParts;
+		 
+	eLoadSta1State.eWaitForIBTrackClear:
+	       Status.StationStauts[MM_CONST.LOAD_1_STA_HMI_STATE] := OverallStationStatus.eWarning;
+		   
+    
+	eLoadSta1State.ePalletHoldDownEngage,
+	eLoadSta1State.ePalletHoldDownEngaged,
+	eLoadSta1State.ePalletReleaseRaise,
+	eLoadSta1State.ePalletReleaseRaised,
+	eLoadSta1State.eWaitForYushinPrepareLoad,
+	eLoadSta1State.eWaitForYushinToolDown,	
+	eLoadSta1State.ePalletReleaseLower,
+	eLoadSta1State.eWaitForYushinToolUp,	
+	eLoadSta1State.eProcessing:
+	     Status.StationStauts[MM_CONST.LOAD_1_STA_HMI_STATE] := OverallStationStatus.eRunning;
+		 
+	eLoadSta1State.eStopActive:
+	     Status.StationStauts[MM_CONST.LOAD_1_STA_HMI_STATE] := OverallStationStatus.eCycleStop;
+    	
+	ELSE;	
+	END_CASE
+
+END_IF
+
+Status.StationStauts[MM_CONST.LOAD_2_STA_HMI_STATE] := Status.StationStauts[MM_CONST.LOAD_1_STA_HMI_STATE];
+Status.StationStauts[MM_CONST.LOAD_3_STA_HMI_STATE] := Status.StationStauts[MM_CONST.LOAD_1_STA_HMI_STATE];
+Status.StationStauts[MM_CONST.LOAD_4_STA_HMI_STATE] := Status.StationStauts[MM_CONST.LOAD_1_STA_HMI_STATE];
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearVehicleTrigger" Id="{1ec6d545-07c6-4ed2-8b32-601b6b341dc9}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;
+CycleNumb :=0;
+LoadingComplete:= FALSE;
+HoldVehicleAtIBStop := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="HoldVehicle_IBStop" Id="{8a263cbc-2b57-4f67-b277-2ee45ea7aae8}">
+      <Declaration><![CDATA[PROPERTY PUBLIC HoldVehicle_IBStop : BOOL]]></Declaration>
+      <Get Name="Get" Id="{f1623f92-6e76-4fc9-a661-904949a57794}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[HoldVehicle_IBStop := HoldVehicleAtIBStop;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="IsFaulted" Id="{40e5b240-48a2-48e6-bc9d-8e6fcc8daa1f}">
+      <Declaration><![CDATA[METHOD PUBLIC IsFaulted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsFaulted := (State = eLoadSta1State.eUnknown OR State = eLoadSta1State.eError);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsInboundTrackClear" Id="{793af2df-3c39-475f-8951-540560c7f2f1}">
+      <Declaration><![CDATA[METHOD PUBLIC IsInboundTrackClear : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	byCounter :BYTE;
+	VehicleInRobotInboundPath: BOOL;
+	KeepOffStartPOS: REAL;
+	KeepOffStopPOS: REAL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsInboundTrackClear := TRUE;
+KeepOffStartPos := MM_CONST.IB_STOP_ROBOT_CLEAR_POS+ (MM_CONST.Vehicle_Length)/1000;
+KeepOffStopPos	:= MM_CONST.CAP_POS - (MM_CONST.Vehicle_Length*2/1000);
+FOR byCounter := 1 TO MM_CONST.MAX_VEHICLES BY 1 DO  // if there is any vehicle in the Inbound track, do not load any parts
+	IF ((STATUS.MMVehiclesStatus[byCounter].VehiclePos > KeepOffStartPos) AND (STATUS.MMVehiclesStatus[byCounter].VehiclePos < KeepOffStopPos)) THEN
+		IsInboundTrackClear := FALSE;
+	END_IF
+END_FOR
+
+ 
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsLoadWaitingForYushin" Id="{568988a3-ace5-4f04-ad96-fa90844ecf13}">
+      <Declaration><![CDATA[METHOD PUBLIC IsLoadWaitingForYushin : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsLoadWaitingForYushin := (State = eLoadSta1State.eWaitForYushinPrepareLoad);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletCloseExtended" Id="{2d77b344-6a1b-4bc6-bde1-ceae33ba7646}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletCloseExtended : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletCloseExtended := (GVL_IO.LD_XPalletCloseExtended_1_2 AND GVL_IO.LD_XPalletCloseExtended_3_4
+                          AND NOT GVL_IO.LD_XPalletCloseRetracted_1_2 AND NOT  GVL_IO.LD_XPalletCloseRetracted_3_4);
+IF(NOT IsPalletCloseExtended ) THEN
+	Status.Load1StatusMsg:= 'Load: Check Pallet Close Sensors';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletCloseRetracted" Id="{bb5702a4-264f-4470-b93f-c885cfd49c16}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletCloseRetracted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletCloseRetracted := (NOT GVL_IO.LD_XPalletCloseExtended_1_2 AND GVL_IO.LD_XPalletCloseRetracted_1_2
+                          AND NOT GVL_IO.LD_XPalletCloseExtended_3_4 AND GVL_IO.LD_XPalletCloseRetracted_3_4);
+IF(NOT IsPalletCloseRetracted ) THEN
+	Status.Load1StatusMsg:= 'Load: Check Pallet Close Sensors';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownEngaged" Id="{776c64e9-e40a-49f5-90b1-46b2e5662c75}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownEngaged : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownEngaged := (GVL_IO.LD_XPalletHoldRetractEngage AND NOT GVL_IO.LD_XPalletHoldDownExtendHome);
+IF(NOT IsPalletHoldDownEngaged) THEN
+	Status.Load1StatusMsg:= 'Load: Check Pallet Hold Down';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownFree" Id="{160af038-f709-4b84-a881-9ea09a4f2681}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownFree : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownFree := (NOT GVL_IO.LD_XPalletHoldRetractEngage AND GVL_IO.LD_XPalletHoldDownExtendHome);
+IF(NOT IsPalletHoldDownFree) THEN
+	Status.Load1StatusMsg:= 'Load: Check Pallet Hold Down';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletReleaseEngaged" Id="{8e8c2a12-43e0-406c-b3a2-0f36f5fd584c}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletReleaseEngaged : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletReleaseEngaged := (NOT GVL_IO.LD_XPalletReleaseHome AND GVL_IO.LD_XPalletReleaseExtended); 
+IF(NOT IsPalletReleaseEngaged) THEN
+	Status.Load1StatusMsg:= 'Load: Check Pallet Release';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletReleaseFree" Id="{d27a3cbf-01ed-43d4-8e58-0125ba86d7f6}">
+      <Declaration><![CDATA[METHOD IsPalletReleaseFree : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletReleaseFree := (GVL_IO.LD_XPalletReleaseHome AND NOT GVL_IO.LD_XPalletReleaseExtended); 
+IF(NOT IsPalletReleaseFree) THEN
+	Status.Load1StatusMsg:= 'Load: Check Pallet Release';
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="LoadComplete" Id="{97247fb2-64e0-4bfe-912f-40b48739ef4e}">
+      <Declaration><![CDATA[PROPERTY PUBLIC LoadComplete : BOOL]]></Declaration>
+      <Set Name="Set" Id="{fcf2319d-6498-4ad9-ace4-29120d1c9c23}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[LoadingComplete := LoadComplete;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="Ready" Id="{c5a19808-3307-4e4f-86e2-8d2f108579bf}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{61580b2e-bd59-43f7-9e05-d7a49358eb99}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Ready := (State = eLoadSta1State.eReady);]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Action Name="ResetDwellTimer" Id="{f55cfb61-9fc0-41c3-b6d3-f3b29f1f062a}">
+      <Implementation>
+        <ST><![CDATA[DwellTimer(IN:= FALSE);]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="ResetState" Id="{1a5a32a5-f4c8-4c98-91fd-3189f557f727}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetState : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	State := eLoadSta1State.eUnknown;
+	NextState := eLoadSta1State.eUnknown;]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="ResetStateTimer" Id="{37db9e28-daaa-4dc5-a07e-3538b3763d7b}">
+      <Implementation>
+        <ST><![CDATA[StateTimer(IN:= FALSE);]]></ST>
+      </Implementation>
+    </Action>
+    <Property Name="Trigger" Id="{d8c3d252-618e-457c-b346-a10f90abb009}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{57b79b58-0cb2-4ef8-9539-4f902bef36e3}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="UpdatePartData" Id="{748b6e81-35ae-4ab6-a0fa-d95a1227c8fa}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdatePartData : BOOL
+VAR_INPUT	
+END_VAR
+VAR
+	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[memset(ADR(PartsData.Status[VUT]),0,SIZEOF(PartDataType));
+PartsData.Status[VUT].LoadTime := SYSTEMTIME_TO_STRING(Logging.fbCurrTime.systemTime);
+PartsData.Status[VUT].CavityNumber := RowNumber + SeedNumber;
+CycleNumb := CycleNumb+1; // Use this till Yushin Robot sends out this information with Bit Location ID
+PartsData.Status[VUT].OverallStatus := ePartStatus.eLoaded; // At least that is the assumption. We may want to check on how to turn off cavities later, but this will be caught by vision.
+PartsData.Status[VUT].BarrelSize := LotsData.Lot.BarrelSize; // we are copying this data in case we might in future want to have more than one lots running at the same time on the machine
+PartsData.Status[VUT].PartNumber := LotsData.Lot.PartNumber; // we are copying this data in case we might in future want to have more than one lots running at the same time on the machine
+PartsData.Status[VUT].LotNumber := LotsData.Lot.LotNumber; // we are copying this data in case we might in future want to have more than one lots running at the same time on the machine]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="VehicleUnderTest" Id="{e25297ce-ef61-4116-b216-cfe2f23ebbbd}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{3ad8197f-6ceb-4036-b241-55804716be1b}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{8ae7cb03-d83f-45ff-b284-29d420b0b875}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="Load1Station">
+      <LineId Id="2109" Count="80" />
+      <LineId Id="2457" Count="0" />
+      <LineId Id="2190" Count="34" />
+      <LineId Id="2459" Count="0" />
+      <LineId Id="2225" Count="18" />
+      <LineId Id="2458" Count="0" />
+      <LineId Id="2244" Count="21" />
+      <LineId Id="2433" Count="1" />
+      <LineId Id="2266" Count="144" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.Act_EngagePalletHoldDown">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.Act_EngagePalletRelease">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.Act_ExtendPalletClose">
+      <LineId Id="1" Count="1" />
+    </LineIds>
+    <LineIds Name="Load1Station.Act_FreePalletHoldDown">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.Act_FreePalletRelease">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.Act_RetractPalletClose">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.AssignStationStatusForHMI">
+      <LineId Id="59" Count="39" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.ClearVehicleTrigger">
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.HoldVehicle_IBStop.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.IsFaulted">
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.IsInboundTrackClear">
+      <LineId Id="19" Count="1" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="21" Count="1" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="10" Count="1" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.IsLoadWaitingForYushin">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.IsPalletCloseExtended">
+      <LineId Id="6" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.IsPalletCloseRetracted">
+      <LineId Id="6" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.IsPalletHoldDownEngaged">
+      <LineId Id="5" Count="0" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.IsPalletHoldDownFree">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.IsPalletReleaseEngaged">
+      <LineId Id="5" Count="0" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.IsPalletReleaseFree">
+      <LineId Id="5" Count="0" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.LoadComplete.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.Ready.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.ResetDwellTimer">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.ResetState">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.ResetStateTimer">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.UpdatePartData">
+      <LineId Id="13" Count="0" />
+      <LineId Id="6" Count="1" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="10" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="Load1Station.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

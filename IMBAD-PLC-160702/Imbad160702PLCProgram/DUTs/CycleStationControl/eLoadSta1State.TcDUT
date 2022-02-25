@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.3">
+  <DUT Name="eLoadSta1State" Id="{0eff65e7-79db-4878-9f0b-47b4da9f47e8}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eLoadSta1State :
+( 
+	eUnknown :=301,
+    eInit,
+	eHoming,
+	eReady, // waiting for vehicle trigger
+	eWaitForYushinPrepareLoad,
+	ePalletHoldDownEngage,
+	ePalletHoldDownEngaged,
+	ePalletHoldDownFree,
+	ePalletHoldDownFreed,
+	ePalletReleaseRaise,
+	ePalletReleaseRaised,
+	eWaitForIBTrackClear,
+	eSignalYushinOKToLoad,
+	eWaitForYushinToolDown,	
+	ePalletCloseExtend,
+	ePalletCloseExtended,
+	ePalletReleaseLower,
+	ePalletReleaseLowered,
+	ePalletCloseRetract,
+	ePalletCloseRetracted,
+	eWaitForYushinToolUp,	
+	eProcessing,
+	eDepart,
+	eStopActive,
+    eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

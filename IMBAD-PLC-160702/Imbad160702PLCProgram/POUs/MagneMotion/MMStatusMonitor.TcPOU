@@ -1,0 +1,185 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="MMStatusMonitor" Id="{14f6e4d8-c9ee-4d56-9214-f7809589574d}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC MMStatusMonitor
+VAR_IN_OUT
+	
+END_VAR
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	HLCStatusTimer		:TON;
+	PathStatusTimer		:TON;
+	MotorStatusTimer	:TON;
+	VehicleStatusTimer	:TON;
+	byCounter: BYTE := 1;
+	bVehicleJammed: BOOL := FALSE;
+	bVehicleLostByMotor: BOOL := FALSE;
+	bPrevVehicleJammed : BOOL := FALSE;
+	JamTimer :TON;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[HLCStatusTimer(IN:=TRUE,PT:=MM_CONST.MM_HLC_STATUS_POLLING);
+PathStatusTimer(IN:=TRUE,PT:=MM_CONST.MM_PATH_STATUS_POLLING);
+MotorStatusTimer(IN:=TRUE,PT:=MM_CONST.MM_MOTOR_STATUS_POLLING);
+VehicleStatusTimer(IN:=TRUE, PT:=MM_CONST.MM_VEHICLE_STATUS_POLLING);
+
+IF (HLCStatusTimer.Q) THEN
+		Stations.fbMMSendMsg.M_CmdHLCStatus();
+		HLCStatusTimer(IN:=FALSE);
+END_IF
+
+IF (PathStatusTimer.Q) THEN
+		Stations.fbMMSendMsg.M_CmdHLCStatus(); // to do get path status
+		PathStatusTimer(IN:=FALSE);
+END_IF
+
+IF (MotorStatusTimer.Q) THEN
+		Stations.fbMMSendMsg.M_CmdHLCStatus(); // to do get HLC Status
+		MotorStatusTimer(IN:=FALSE);
+END_IF
+
+IF (VehicleStatusTimer.Q) THEN
+		Stations.fbMMSendMsg.M_CmdVehicleStatus();
+		VehicleStatusTimer(IN:=FALSE);
+END_IF
+
+bVehicleJammed := FALSE;
+bVehicleLostByMotor := FALSE;
+FOR byCounter := 1 TO MM_CONST.MAX_VEHICLES BY 1 DO
+	bVehicleJammed := bVehicleJammed OR STATUS.MMVehiclesStatus[byCounter].VehicleFlags.2;
+	bVehicleLostByMotor := bVehicleLostByMotor OR (STATUS.MMVehiclesStatus[byCounter].VehicleFlags.0 = 0) OR (STATUS.MMVehiclesStatus[byCounter].VehicleFlags.7 = 1);
+    STATUS.PartStatusHMI[byCounter] := PartsData.Status[byCounter].OverallStatus;	// this will add color to the vehicles on the HMI
+	IF (STATUS.MMVehiclesStatus[byCounter].VehicleFlags.2) THEN STATUS.PartStatusHMI[byCounter] := ePartStatus.eJam; END_IF
+END_FOR
+
+IF (bVehicleJammed AND NOT bPrevVehicleJammed) THEN // only when transitioning from non-jammed state to jammed state
+	//Stations.fbMMSendMsg.M_CmdSuspendMov();
+	//GVL_IO.MM_YEnableMagneMotion := FALSE;
+END_IF
+bPrevVehicleJammed := bVehicleJammed;  // to ensure that after turning on the MM bus, we don't immediately shut down the MM bus.
+
+IF (bVehicleJammed) THEN JamTimer(IN:=TRUE, PT:=T#40S);
+	ELSE 
+	JamTimer(IN:=FALSE);
+END_IF
+IF (GVL_IO.ResumeMovementFromHMI <>0) THEN // Button Click Resume From HMI.
+//	Stations.fbMMSendMsg.M_CmdResumeMov();
+	GVL_IO.ResumeMovementFromHMI := 0;
+	GVL_IO.MM_YEnableMagneMotion := TRUE;
+	Stations.fbPrimeMover.ResetPrimeMoverAndPurge(); // this will send prime mover to purrge state
+	Stations.fbCycleControl.ResetCycleControlState();
+
+	Stations.fbLoad1Sta.ClearVehicleTrigger();
+	Stations.fbLoad2Sta.ClearVehicleTrigger(); 
+	Stations.fbLoad3Sta.ClearVehicleTrigger();
+	Stations.fbLoad4Sta.ClearVehicleTrigger();
+	Stations.fbVisionSta.ClearVehicleTrigger();
+	Stations.fbPistonSta.ClearVehicleTrigger();
+	Stations.fbCapInsertSta.ClearVehicleTrigger();
+	//Stations.fbGoodUnloadSta.ClearVehicleTrigger();
+	Stations.fbGoodULSta_1.ClearVehicleTrigger();
+	Stations.fbGoodULSta_2.ClearVehicleTrigger();
+	Stations.fbGoodULSta_3.ClearVehicleTrigger();
+	Stations.fbGoodULSta_4.ClearVehicleTrigger();
+	Stations.fbRejectSta.ClearVehicleTrigger();
+	Stations.fbIB_StopRobotSta.ClearVehicleTrigger();	
+	Stations.fbOB_StopBeforeVisionSta.ClearVehicleTrigger(); 
+	Stations.fbOB_StopRobotSta.ClearVehicleTrigger();
+	Stations.fbOB_StopRobotSta.MoveToLoading := TRUE;
+	
+	Stations.fbRoutePlanner.SetRejectLoadPosChoiceToInit();
+	Stations.fbRoutePlanner.SetGoodULLoadPosChoiceToInit();
+	
+	FOR byCounter := 1 TO MM_CONST.MAX_VEHICLES BY 1 DO
+			Stations.fbVehicleManager[byCounter].ResetVehicleManager();
+	END_FOR	
+	
+	IF (bVehicleLostByMotor) THEN
+		;
+	END_IF
+END_IF
+
+]]></ST>
+    </Implementation>
+    <Property Name="IsMMJammed" Id="{a26b7db8-39e5-4f0a-b74d-d7a743b31c08}">
+      <Declaration><![CDATA[PROPERTY PUBLIC IsMMJammed : BOOL]]></Declaration>
+      <Get Name="Get" Id="{6ccaea6e-470e-4d2f-b0d2-b75fa81f06e4}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[IsMMJammed := (JamTimer.Q);]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{1cb63b9c-4d7d-424c-9107-ac4d899625c8}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="MMStatusMonitor">
+      <LineId Id="37" Count="0" />
+      <LineId Id="34" Count="1" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="17" Count="3" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="21" Count="3" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="25" Count="3" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="137" Count="0" />
+      <LineId Id="263" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="73" Count="1" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="75" Count="1" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="265" Count="0" />
+      <LineId Id="268" Count="0" />
+      <LineId Id="266" Count="1" />
+      <LineId Id="77" Count="1" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="198" Count="1" />
+      <LineId Id="220" Count="0" />
+      <LineId Id="224" Count="0" />
+      <LineId Id="226" Count="6" />
+      <LineId Id="218" Count="0" />
+      <LineId Id="288" Count="3" />
+      <LineId Id="234" Count="1" />
+      <LineId Id="243" Count="1" />
+      <LineId Id="242" Count="0" />
+      <LineId Id="237" Count="0" />
+      <LineId Id="233" Count="0" />
+      <LineId Id="311" Count="0" />
+      <LineId Id="238" Count="3" />
+      <LineId Id="158" Count="2" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="135" Count="1" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="MMStatusMonitor.IsMMJammed.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="MMStatusMonitor.IsMMJammed.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

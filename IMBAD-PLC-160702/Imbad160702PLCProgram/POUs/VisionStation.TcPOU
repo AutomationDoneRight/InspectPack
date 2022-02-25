@@ -1,0 +1,795 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="VisionStation" Id="{799ee6d4-b1f1-474c-a14e-772dfae18202}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC VisionStation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : eVisionStaState := eVisionStaState.eUnknown;
+	NextState : eVisionStaState := eVisionStaState.eUnknown;
+	ErrorReturnState : eVisionStaState := eVisionStaState.eUnknown;
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;
+	StateTimer : TON;
+	VehicleStopTime : TIME := T#150MS; //was 75ms, believed to cause duplicate bad info 3-20-19 CMS
+	SDNumber : BYTE;
+	ProgramNumber : BYTE;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Sequence of events:
+// Check if Cmd is Ready to Process else, give message to operator
+// Check if Correct Program in loaded, else change to correct program for Barrel Type
+// Check if in Run Mode, else put in Run Mode
+// Check if all Cameras are ready to accept triggers, else reset Triggers
+// Go to Wait for Vehicle Trigger
+// Complete Inspection
+// Depart vehicle and go to state where we check if all cameras are ready to accept triggers
+
+
+IF (GVL_IO.MachineEStopped) THEN 
+	State := eVisionStaState.eUnknown;
+	NextState := eVisionStaState.eUnknown;
+	ErrorReturnState := eVisionStaState.eUnknown;
+	Status.VisionStatusMsg:= 'Vision  Unknown, Check AIR, E-STOP and Hit Start';
+END_IF
+
+CASE State OF
+	
+eVisionStaState.eUnknown:
+	GVL_IO.VS_YBarrelLED := FALSE; 
+	GVL_IO.VS_YTrigger1  := FALSE;
+	GVL_IO.VS_YTrigger2  := FALSE;
+	GVL_IO.VS_YTrigger3  := FALSE;
+	GVL_IO.VS_YTrigger4  := FALSE;
+	GVL_IO.VS_YCmdRequest := FALSE;
+	GVL_IO.VS_YResultAck := TRUE;
+	GVL_IO.VS_YErrorReset := FALSE;
+	
+	IF (GVL_IO.MC_XStartPB AND GVL_IO.MC_NotEStopped) THEN //Vision Sta doesn't need Air Pressure for debug, so removed Air Pressure Check
+		NextState := eVisionStaState.eInit; //eVisionStaState.eCheckToolPosition; // ;	
+	END_IF	
+
+
+eVisionStaState.eCheckToolPosition:	
+	IF (LotsData.Lot.BarrelSize = eBarrelType.Size55cc) THEN
+		IF (GVL_IO.VS_XToolingLocationUpper AND GVL_IO.VS_XToolingLocationLower) THEN
+			 NextState := eVisionStaState.eInit;
+		ELSE
+			ErrorReturnState := eVisionStaState.eCheckToolPosition;
+            NextState := eVisionStaState.eError;
+        	Status.VisionStatusMsg:= 'Vision: Incorrect 55cc ToolID,Fix and Hit Start';
+		END_IF
+	ELSIF (LotsData.Lot.BarrelSize = eBarrelType.Size30cc) THEN
+		IF (NOT GVL_IO.VS_XToolingLocationUpper AND GVL_IO.VS_XToolingLocationLower) THEN
+			 NextState := eVisionStaState.eInit;
+		ELSE
+			ErrorReturnState := eVisionStaState.eCheckToolPosition;
+            NextState := eVisionStaState.eError;
+        	Status.VisionStatusMsg:= 'Vision: Incorrect 30cc ToolID,Fix and Hit Start';
+		END_IF
+	ELSE
+	     ErrorReturnState := eVisionStaState.eUnknown;
+         NextState := eVisionStaState.eError;
+         Status.VisionStatusMsg:= 'Vision: Incorrect Part Selection, Start New Lot';
+	END_IF
+	
+eVisionStaState.eInit:
+     GVL_IO.VS_YBarrelLED := FALSE;
+	 GVL_IO.VS_YTrigger1  := FALSE;
+	 GVL_IO.VS_YTrigger2  := FALSE;
+	 GVL_IO.VS_YTrigger3  := FALSE;
+	 GVL_IO.VS_YTrigger4  := FALSE;
+	 GVL_IO.VS_YCmdRequest := FALSE;
+	 GVL_IO.VS_YResultAck  := TRUE;
+	 GVL_IO.VS_YErrorReset := FALSE;
+	IF (GVL_IO.VS_XError) THEN
+		GVL_IO.VS_YErrorReset := TRUE;		
+    END_IF 
+	DwellTimer(IN:=TRUE, PT:= T#2S);
+	IF (DwellTimer.Q) THEN
+		DwellTimer(IN:=FALSE);
+		GVL_IO.VS_YResultAck  := FALSE;
+		GVL_IO.VS_YErrorReset := FALSE;		
+		IF(GVL_IO.VS_XCmdReady AND NOT GVL_IO.VS_XBusy AND NOT GVL_IO.VS_XError) THEN
+			NextState := eVisionStaState.eHoming;				
+		ELSE 
+			NextState := eVisionStaState.eCmdTriggerReset;
+		END_IF
+	END_IF
+	
+eVisionStaState.eCmdTriggerReset:
+	GVL_IO.VS_YCmdNumber := 15;
+	IF (GVL_IO.VS_XCmdReady) THEN
+		DwellTimer(IN:=TRUE, PT:=T#50MS);
+		IF (DwellTimer.Q) THEN
+			DwellTimer(IN:=FALSE);
+			GVL_IO.VS_YCmdRequest := TRUE;
+			NextState := eVisionStaState.eCheckTriggerResetCmpl;
+			StateTimer(IN:=FALSE);
+		END_IF	
+	ELSE
+		NextState := eVisionStaState.eError;
+		ErrorReturnState := eVisionStaState.eUnknown;
+        Status.VisionStatusMsg:= 'Vision: Keyence Not Ready, fix in Keyence HMI, then Press Start';
+	END_IF
+
+eVisionStaState.eCheckTriggerResetCmpl:
+	IF (GVL_IO.VS_XCmdCmpl) THEN
+		GVL_IO.VS_YCmdRequest := FALSE;
+		NextState := eVisionStaState.eError;
+		ErrorReturnState := eVisionStaState.eInit;
+		Status.VisionStatusMsg:= 'Vision System remotely reset by PLC, Press Start to continue';
+	END_IF
+
+	
+eVisionStaState.eHoming: // get program that is correct loaded 
+    IF (GVL_IO.VS_XReady1 AND GVL_IO.VS_XReady2 AND GVL_IO.VS_XReady3 AND GVL_IO.VS_XReady4) THEN
+		NextState := eVisionStaState.eConfirmRunState;
+	ELSE
+		NextState := eVisionStaState.eUnknown;
+		Status.VisionStatusMsg:= 'Vision not Ready, check if Keyence Controller is ready/run mode';
+		DwellTimer(IN:=FALSE);
+	END_IF
+
+
+	
+eVisionStaState.eConfirmRunState:
+     IF (GVL_IO.VS_XRun) THEN 
+		 NextState := eVisionStaState.eGetProgramNumber;
+		 DwellTimer(IN:=FALSE);
+	 END_IF
+	 Status.VisionStatusMsg:= 'Put Vision Station in Run Mode';
+ /// Here we need to put the controller in the Run State either programatically and tell the operator to put in  RUN state... execute the control parameter write 
+ 
+eVisionStaState.eGetProgramNumber:
+//Check if cmd ready
+//Send read command
+	IF(GVL_IO.VS_XCmdReady) THEN
+		GVL_IO.VS_YCmdNumber := VIS_CONST.Cmd_ReadProgram; //write command number
+		GVL_IO.VS_YCmdParam1 := 0;    //write parameters
+		GVL_IO.VS_YCmdParam2 := 0;
+		GVL_IO.VS_YCmdRequest := TRUE;         //turn on command request flag
+
+//check if command complete	
+//read value
+//cmd request flag off
+
+	ELSIF (GVL_IO.VS_XCmdCmpl) THEN
+		GVL_IO.VS_YCmdRequest := FALSE; 
+		NextState := eVisionStaState.eCheckProgramNumber;
+	END_IF
+
+	
+eVisionStaState.eCheckProgramNumber:
+//compare to correct value
+//if correct, next state
+	SDNumber := GVL_IO.VS_XCmdData1;
+	ProgramNumber := GVL_IO.VS_XCmdData2;
+	
+	IF((ProgramNumber = LotsData.Lot.VisionProgramNumber) AND (SDNumber = 1)) THEN
+		NextState := eVisionStaState.eReady;
+	ELSIF (LotsData.Lot.VisionStationRunSelect = eVisionEnableState.Disabled) THEN
+		NextState := eVisionStaState.eReady;
+ELSE	
+		NextState := eVisionStaState.eChangeProgramNumber;
+	END_IF
+
+eVisionStaState.eChangeProgramNumber:
+//check if cmd ready
+//send change program cmd
+	IF(GVL_IO.VS_XCmdReady) THEN
+		GVL_IO.VS_YCmdNumber := VIS_CONST.Cmd_ChangeProgram; //write command number
+		GVL_IO.VS_YCmdParam1 := 1;    //write parameters
+		GVL_IO.VS_YCmdParam2 := DINT_TO_BYTE(LotsData.Lot.VisionProgramNumber);
+		GVL_IO.VS_YCmdRequest := TRUE;         //turn on command request flag
+
+//check if command complete	
+//read value
+//if 0 next state
+//else Status.VisionStatusMsg 'Please select correct vision program manually'
+	ELSIF (GVL_IO.VS_XCmdCmpl) THEN
+		GVL_IO.VS_YCmdRequest := FALSE; 
+		NextState := eVisionStaState.eGetProgramNumber;
+		Status.VisionStatusMsg:= 'Please select correct vision program manually'; 	
+	END_IF
+
+	
+eVisionStaState.eReady:
+     GVL_IO.VS_YBarrelLED := TRUE;
+	IF (xTrigger) THEN
+		DwellTimer(IN:=TRUE, PT:= VehicleStopTime);
+		IF (DwellTimer.Q) THEN			
+			NextState := eVisionStaState.eBarellInspectTrigger;
+			PartsData.Status[VUT].OverallStatus := ePartStatus.eReject; //define as reject upfront, later update status
+			PartsData.Status[VUT].VisionInspectTime := SYSTEMTIME_TO_STRING(Logging.fbCurrTime.systemTime); // we are getting some empty time stamp
+			DwellTimer(IN:=FALSE);
+		END_IF
+	END_IF
+	GVL_IO.VS_YResultAck := FALSE;
+	Status.VisionStatusMsg:= 'Waiting For Vehicle Trigger';
+
+eVisionStaState.eWaitingForVehicleTrigger:
+
+eVisionStaState.eBarellInspectTrigger:
+    GVL_IO.VS_YTrigger2 := TRUE;
+	GVL_IO.VS_YTrigger3 := TRUE;
+	GVL_IO.VS_YTrigger4 := TRUE;
+	//DwellTimer(IN:=TRUE, PT:= T#250MS);
+	DwellTimer(IN:=TRUE, PT:= T#175MS);
+	IF (DwellTimer.Q) THEN
+		DwellTimer(IN:=FALSE);
+		GVL_IO.VS_YTrigger1:=  FALSE;
+		GVL_IO.VS_YTrigger2 := FALSE;
+		GVL_IO.VS_YTrigger3 := FALSE;
+		GVL_IO.VS_YTrigger4 := FALSE;
+		GVL_IO.VS_YBarrelLED:= FALSE;
+		NextState := eVisionStaState.eShortShotTrigger; //eVisionStaState.eWaitBarellInspectDone;
+	END_IF
+
+eVisionStaState.eShortShotTrigger:
+     GVL_IO.VS_YTrigger1 := TRUE;
+	 //DwellTimer(IN:=TRUE, PT:= T#250MS);
+	 DwellTimer(IN:=TRUE, PT:= T#125MS);
+	 IF (DwellTimer.Q) THEN
+		 GVL_IO.VS_YTrigger1 := FALSE;
+		 DwellTimer(IN:=FALSE);
+		 NextState := eVisionStaState.eWaitShortShotDone;		 
+	 END_IF
+
+eVisionStaState.eWaitShortShotDone: 
+// check the ACK bit here 
+    GVL_IO.VS_YBarrelLED:= TRUE;
+	DwellTimer(IN:=TRUE, PT:= T#10MS);
+	IF (DwellTimer.Q) THEN
+		NextState := eVisionStaState.eWaitBarellInspectDone;
+		DwellTimer(IN:=FALSE);
+	END_IF	
+
+eVisionStaState.eWaitBarellInspectDone:
+	DwellTimer(IN:=TRUE,PT:=T#10MS);
+	IF (DwellTimer.Q) THEN
+		IF (GVL_IO.VS_XReady1 AND GVL_IO.VS_XReady2 AND GVL_IO.VS_XReady3 AND GVL_IO.VS_XReady4) THEN
+			NextState := eVisionStaState.eProcessVisionData;
+			GVL_IO.VS_YTrigger1:=  FALSE;
+			GVL_IO.VS_YTrigger2 := FALSE;
+			GVL_IO.VS_YTrigger3 := FALSE;
+			GVL_IO.VS_YTrigger4 := FALSE;
+			//GVL_IO.VS_YBarrelLED:= FALSE;
+			DwellTimer(IN:=FALSE);
+        END_IF		
+	END_IF
+
+eVisionStaState.eProcessVisionData:
+	DwellTimer(IN:=TRUE, PT:= T#200MS); //was 20ms, believed to cause duplicate bad info 3-20-19 CMS
+	IF (DwellTimer.Q) THEN 
+		DwellTimer(IN:=FALSE);	
+		//PartsData.Status[VUT].OverallStatus := ePartStatus.eLoaded; // we know its not empty from initial check
+		//PartsData.Status[VUT].OverallStatus := ePartStatus.eGoodPremium; // we need to remove this later 101717
+	    UpdatePartData();
+		GVL_IO.VS_YResultAck := TRUE;
+  		NextState := eVisionStaState.eDepart;
+	END_IF
+   	 
+	
+eVisionStaState.eDepart:
+	Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.VISION_STA, VehicleID := VUT);
+	xTrigger := FALSE;
+    IF (Stations.fbCycleControl.StopRequested) THEN
+        NextState := eVisionStaState.eStopActive; 
+    ELSE
+		NextState := eVisionStaState.eConfirmRunState;
+	END_IF
+	
+	
+
+eVisionStaState.eStopActive:
+ 	IF (NOT Stations.fbCycleControl.StopRequested) THEN
+		NextState := eVisionStaState.eConfirmRunState;
+	END_IF
+	Status.VisionStatusMsg:= 'Vision Cycle Stopped, hit START Button';
+	GVL_IO.VS_YBarrelLED:= FALSE;
+		
+eVisionStaState.eError:
+	IF (GVL_IO.MC_XStartPB) THEN
+		NextState := ErrorReturnState;
+		ErrorReturnState := eVisionStaState.eUnknown;
+	END_IF
+
+
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+	StateTimer(IN:=FALSE);
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+
+AssignStationStatusForHMI();
+]]></ST>
+    </Implementation>
+    <Method Name="AssignStationStatusForHMI" Id="{671d5277-8375-4049-b256-0ff0964fc0d5}">
+      <Declaration><![CDATA[METHOD PUBLIC AssignStationStatusForHMI  : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.StationsState[MM_CONST.VISION_STA_HMI_STATE] := State;
+IF (LotsData.Lot.VisionStationRunSelect = eVisionEnableState.Disabled ) THEN
+	Status.StationStauts[MM_CONST.VISION_STA_HMI_STATE] := OverallStationStatus.eDisabled;	
+ELSE 
+	CASE State OF 
+	eVisionStaState.eUnknown, eVisionStaState.eError:
+		Status.StationStauts[MM_CONST.VISION_STA_HMI_STATE] := OverallStationStatus.eError; 
+    
+    eVisionStaState.eInit, eVisionStaState.eHoming:
+		Status.StationStauts[MM_CONST.VISION_STA_HMI_STATE] := OverallStationStatus.eHoming;
+		
+	eVisionStaState.eConfirmRunState,eVisionStaState.eGetProgramNumber,eVisionStaState.eCheckProgramNumber,eVisionStaState.eChangeProgramNumber:
+	    Status.StationStauts[MM_CONST.VISION_STA_HMI_STATE] := OverallStationStatus.eWarning;
+		
+	eVisionStaState.eReady, eVisionStaState.eWaitingForVehicleTrigger:
+	    Status.StationStauts[MM_CONST.VISION_STA_HMI_STATE] := OverallStationStatus.eWaitingForParts;
+	
+    eVisionStaState.eShortShotTrigger, eVisionStaState.eWaitShortShotDone,eVisionStaState.eBarellInspectTrigger,
+	eVisionStaState.eWaitBarellInspectDone,eVisionStaState.eProcessVisionData:
+	    Status.StationStauts[MM_CONST.VISION_STA_HMI_STATE] := OverallStationStatus.eRunning;
+		
+    eVisionStaState.eStopActive:
+	     Status.StationStauts[MM_CONST.VISION_STA_HMI_STATE] := OverallStationStatus.eCycleStop;
+   	
+    ELSE;	
+	END_CASE
+END_IF
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearVehicleTrigger" Id="{6ddb35a2-6a3a-48b8-ad61-d32717bf1c12}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="InspectionOnGoing" Id="{1bec7d1b-a467-4e77-a008-21725611d56b}">
+      <Declaration><![CDATA[PROPERTY PUBLIC InspectionOnGoing : BOOL]]></Declaration>
+      <Get Name="Get" Id="{518b3ddd-669e-4d68-ac75-c0e9bcf1d1ab}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[InspectionOnGoing := (State = eVisionStaState.eShortShotTrigger OR State = eVisionStaState.eWaitShortShotDone OR 
+	                  State = eVisionStaState.eBarellInspectTrigger OR State = eVisionStaState.eWaitBarellInspectDone );]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="IsFaulted" Id="{ea2ea8a9-343e-4631-84c7-6a3e41f3b5e9}">
+      <Declaration><![CDATA[METHOD PUBLIC IsFaulted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsFaulted := (State = eVisionStaState.eUnknown);]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Ready" Id="{f7606f1a-dbbd-4a47-8795-d62c82aeb67c}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{0d937271-67ed-43b7-a95d-737d5f62a4fa}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Ready := (State = eVisionStaState.eReady);]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Trigger" Id="{ff251fd4-8333-403c-81f3-1b00e575ad93}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{75562da7-062c-4045-976d-c9fe827c51ce}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="UpdatePartData" Id="{1794425e-341a-45c5-ad22-5c9134ebe970}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdatePartData : BOOL
+VAR_INPUT
+
+END_VAR
+VAR
+	TotalStainArea : DINT;
+	TotalStainCount : DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[UpdatePartForHMIStatus();
+PartsData.Status[VUT].VisionInspectTime := SYSTEMTIME_TO_STRING(Logging.fbCurrTime.systemTime);
+IF (GVL_IO.VS_XPartEmpty) THEN
+	PartsData.Status[VUT].OverallStatus := ePartStatus.eEmpty;
+	RETURN;
+END_IF
+
+PartsData.Status[VUT].BurnOffTemp := GVL_IO.BU_Temperature/10; 
+
+// Proceed down only if part is not empty
+// If the Vision station is disabled then just declare that part is loaded.
+
+IF (LotsData.Lot.VisionStationRunSelect = eVisionEnableState.Disabled) THEN   
+		PartsData.Status[VUT].OverallStatus := ePartStatus.eGoodPremium;
+		PartsData.Status[VUT].Premium := TRUE;	
+        PartsData.Status[VUT].Good := FALSE;	
+		PartsData.Status[VUT].VisionPass := TRUE;
+	RETURN;
+END_IF
+
+// If only data collection then call the part loaded and collect data 
+PartsData.Status[VUT].OverallStatus := ePartStatus.eLoaded; // we know its not empty from initial check
+
+PartsData.Status[VUT].VisionData.Cam1Judgement              := GVL_IO.VS_XCam1JudgeVal;
+PartsData.Status[VUT].VisionData.Cam2Judgement              := GVL_IO.VS_XCam2JudgeVal;
+PartsData.Status[VUT].VisionData.Cam3Judgement              := GVL_IO.VS_XCam3JudgeVal;
+PartsData.Status[VUT].VisionData.Cam4Judgement              := GVL_IO.VS_XCam4JudgeVal;
+
+PartsData.Status[VUT].VisionData.MaxIndividualStainArea     := GVL_IO.VS_XMaxIndividualStainArea; 		
+PartsData.Status[VUT].VisionData.MinIndividualStainArea	    := GVL_IO.VS_XMinIndividualStainArea; 		
+PartsData.Status[VUT].VisionData.ModifiedStainArea	        := GVL_IO.VS_XModifiedStainArea;	
+PartsData.Status[VUT].VisionData.ModifiedMaxStain	        := GVL_IO.VS_XModifiedMaxStain;
+
+PartsData.Status[VUT].VisionData.XPosCam1			        := GVL_IO.VS_XXPosCam1; 		
+PartsData.Status[VUT].VisionData.YPosCam1                   := GVL_IO.VS_XYPosCam1; 		
+PartsData.Status[VUT].VisionData.UpperFlawAreaCam2	        := GVL_IO.VS_XUpperFlawAreaCam2;	
+PartsData.Status[VUT].VisionData.LowerFlawAreaCam2	        := GVL_IO.VS_XLowerFlawAreaCam2;	
+PartsData.Status[VUT].VisionData.UpperFlawCountCam2	        := GVL_IO.VS_XUpperFlawCountCam2;
+PartsData.Status[VUT].VisionData.LowerFlawCountCam2	        := GVL_IO.VS_XLowerFlawCountCam2;		
+PartsData.Status[VUT].VisionData.UpperFlawAreaCam3	        := GVL_IO.VS_XUpperFlawAreaCam3;	  
+PartsData.Status[VUT].VisionData.LowerFlawAreaCam3	        := GVL_IO.VS_XLowerFlawAreaCam3;	
+PartsData.Status[VUT].VisionData.UpperFlawCountCam3	        := GVL_IO.VS_XUpperFlawCountCam3;
+PartsData.Status[VUT].VisionData.LowerFlawCountCam3	        := GVL_IO.VS_XLowerFlawCountCam3;
+PartsData.Status[VUT].VisionData.UpperFlawAreaCam4	        := GVL_IO.VS_XUpperFlawAreaCam4;	 
+PartsData.Status[VUT].VisionData.LowerFlawAreaCam4	        := GVL_IO.VS_XLowerFlawAreaCam4;	
+PartsData.Status[VUT].VisionData.UpperFlawCountCam4	        := GVL_IO.VS_XUpperFlawCountCam4;
+PartsData.Status[VUT].VisionData.LowerFlawCountCam4	        := GVL_IO.VS_XLowerFlawCountCam4;
+
+LotsData.Lot.IndividualStainAreaMaxPremium                  := LotsData.Lot.ShortShotMinRadius;
+LotsData.Lot.IndividualStainAreaMaxGood                     := LotsData.Lot.ShortShotMaxRadius;
+
+IF (LotsData.Lot.VisionStationRunSelect = eVisionEnableState.DataCollectOnly) THEN
+	  	PartsData.Status[VUT].OverallStatus := ePartStatus.eGoodPremium;
+		PartsData.Status[VUT].Premium := TRUE;	
+        PartsData.Status[VUT].Good := FALSE;	
+		PartsData.Status[VUT].VisionPass := TRUE;
+      RETURN;
+END_IF
+
+// Here on, the vision station is enabled, the part is determined to be loaded. Now check the results
+IF (NOT GVL_IO.VS_XCam1JudgeVal AND NOT GVL_IO.VS_XCam2JudgeVal AND NOT GVL_IO.VS_XCam3JudgeVal AND NOT GVL_IO.VS_XCam4JudgeVal AND NOT GVL_IO.VS_XPartEmpty) THEN 
+	PartsData.Status[VUT].OverallStatus := ePartStatus.eVisionPass;  // Evalute further down this method for premium or good or reject
+	TotalStainArea   := (PartsData.Status[VUT].VisionData.UpperFlawAreaCam2 + PartsData.Status[VUT].VisionData.LowerFlawAreaCam2 + 
+                    PartsData.Status[VUT].VisionData.UpperFlawAreaCam3 + PartsData.Status[VUT].VisionData.LowerFlawAreaCam3 + 
+                    PartsData.Status[VUT].VisionData.UpperFlawAreaCam4 + PartsData.Status[VUT].VisionData.LowerFlawAreaCam4 )/1000;  
+	TotalStainCount  := PartsData.Status[VUT].VisionData.UpperFlawCountCam2 + PartsData.Status[VUT].VisionData.LowerFlawCountCam2 +  					   
+					PartsData.Status[VUT].VisionData.UpperFlawCountCam3 + PartsData.Status[VUT].VisionData.LowerFlawCountCam3 +    
+					PartsData.Status[VUT].VisionData.UpperFlawCountCam4 + PartsData.Status[VUT].VisionData.LowerFlawCountCam4 ;   
+			
+	IF (PartsData.Status[VUT].VisionData.ModifiedMaxStain <= LotsData.Lot.IndividualStainAreaMaxPremium AND
+        PartsData.Status[VUT].VisionData.ModifiedStainArea <= LotsData.Lot.TotalStainAreaMaxPremium AND 
+        TotalStainCount <= REAL_TO_DINT(LotsData.Lot.TotalStainCountMaxPremium)) THEN
+		
+		PartsData.Status[VUT].OverallStatus := ePartStatus.eGoodPremium;
+		PartsData.Status[VUT].Premium := TRUE;	
+        PartsData.Status[VUT].Good := FALSE;	
+		PartsData.Status[VUT].VisionPass := TRUE;
+	ELSIF (PartsData.Status[VUT].VisionData.ModifiedMaxStain <= LotsData.Lot.IndividualStainAreaMaxGood AND
+           PartsData.Status[VUT].VisionData.ModifiedStainArea <= LotsData.Lot.TotalStainAreaMaxGood AND 
+           TotalStainCount <= REAL_TO_DINT(LotsData.Lot.TotalStainCountMaxGood)) THEN
+		PartsData.Status[VUT].OverallStatus := ePartStatus.eGoodRegular;
+        PartsData.Status[VUT].Good := TRUE;	
+		PartsData.Status[VUT].Premium := FALSE;
+		PartsData.Status[VUT].VisionPass := TRUE;
+    ELSE 
+		//PartsData.Status[VUT].OverallStatus := ePartStatus.eReject;
+		PartsData.Status[VUT].OverallStatus := ePartStatus.eReject; // for now just keep calling everything as good regular, until data anlysis is complete and limits are setup
+   	    PartsData.Status[VUT].Good := FALSE;
+		PartsData.Status[VUT].Premium := FALSE;		
+		PartsData.Status[VUT].VisionPass := FALSE;
+	END_IF	 
+ELSE 
+	PartsData.Status[VUT].OverallStatus := ePartStatus.eReject;   
+	PartsData.Status[VUT].Premium := FALSE;
+    PartsData.Status[VUT].Good := FALSE;
+	PartsData.Status[VUT].VisionPass := FALSE;
+END_IF 
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="UpdatePartForHMIStatus" Id="{2dd0d646-22e4-4777-bae1-64d29f13b765}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdatePartForHMIStatus : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (GVL_IO.VS_XPartEmpty) THEN
+	Status.VisionStatusHMI[1] := 0; // Part Empty
+END_IF
+Status.VisionStatusHMI[2] := BOOL_TO_INT(NOT GVL_IO.VS_XCam1JudgeVal);
+Status.VisionStatusHMI[3] := DINT_TO_INT(GVL_IO.VS_XUpperFlawAreaCam2 + GVL_IO.VS_XLowerFlawAreaCam2);
+Status.VisionStatusHMI[4] := DINT_TO_INT(GVL_IO.VS_XUpperFlawCountCam2 + GVL_IO.VS_XLowerFlawCountCam2);
+Status.VisionStatusHMI[5] := DINT_TO_INT(GVL_IO.VS_XUpperFlawAreaCam3 + GVL_IO.VS_XLowerFlawAreaCam3);
+Status.VisionStatusHMI[6] := DINT_TO_INT(GVL_IO.VS_XUpperFlawCountCam3 + GVL_IO.VS_XLowerFlawCountCam3);
+Status.VisionStatusHMI[7] := DINT_TO_INT(GVL_IO.VS_XUpperFlawAreaCam4 + GVL_IO.VS_XLowerFlawAreaCam4);
+Status.VisionStatusHMI[8] := DINT_TO_INT(GVL_IO.VS_XUpperFlawCountCam4 + GVL_IO.VS_XLowerFlawCountCam4);]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="VehicleUnderTest" Id="{25aa81b5-0c35-4c85-b385-48822b06ccb3}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{c8defa6e-ac9c-4d97-a1f5-aab1b41672b9}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{1b089fb4-d5da-467f-9b2d-3dd965fc8c5e}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="VisionStation">
+      <LineId Id="176" Count="6" />
+      <LineId Id="173" Count="2" />
+      <LineId Id="125" Count="1" />
+      <LineId Id="377" Count="0" />
+      <LineId Id="704" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="108" Count="1" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="207" Count="0" />
+      <LineId Id="209" Count="4" />
+      <LineId Id="149" Count="0" />
+      <LineId Id="700" Count="0" />
+      <LineId Id="702" Count="0" />
+      <LineId Id="154" Count="1" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="381" Count="1" />
+      <LineId Id="150" Count="0" />
+      <LineId Id="383" Count="1" />
+      <LineId Id="462" Count="2" />
+      <LineId Id="711" Count="0" />
+      <LineId Id="385" Count="2" />
+      <LineId Id="395" Count="0" />
+      <LineId Id="459" Count="2" />
+      <LineId Id="712" Count="0" />
+      <LineId Id="389" Count="0" />
+      <LineId Id="465" Count="0" />
+      <LineId Id="467" Count="0" />
+      <LineId Id="469" Count="0" />
+      <LineId Id="713" Count="0" />
+      <LineId Id="468" Count="0" />
+      <LineId Id="390" Count="0" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="197" Count="7" />
+      <LineId Id="714" Count="0" />
+      <LineId Id="206" Count="0" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="165" Count="0" />
+      <LineId Id="744" Count="1" />
+      <LineId Id="747" Count="2" />
+      <LineId Id="166" Count="0" />
+      <LineId Id="265" Count="0" />
+      <LineId Id="443" Count="0" />
+      <LineId Id="167" Count="1" />
+      <LineId Id="746" Count="0" />
+      <LineId Id="715" Count="0" />
+      <LineId Id="717" Count="11" />
+      <LineId Id="741" Count="0" />
+      <LineId Id="729" Count="5" />
+      <LineId Id="750" Count="0" />
+      <LineId Id="735" Count="0" />
+      <LineId Id="751" Count="0" />
+      <LineId Id="736" Count="0" />
+      <LineId Id="716" Count="0" />
+      <LineId Id="88" Count="0" />
+      <LineId Id="189" Count="0" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="396" Count="1" />
+      <LineId Id="444" Count="0" />
+      <LineId Id="405" Count="0" />
+      <LineId Id="215" Count="0" />
+      <LineId Id="195" Count="0" />
+      <LineId Id="399" Count="0" />
+      <LineId Id="437" Count="0" />
+      <LineId Id="216" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="187" Count="0" />
+      <LineId Id="281" Count="0" />
+      <LineId Id="188" Count="0" />
+      <LineId Id="379" Count="0" />
+      <LineId Id="186" Count="0" />
+      <LineId Id="217" Count="0" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="571" Count="0" />
+      <LineId Id="590" Count="0" />
+      <LineId Id="573" Count="0" />
+      <LineId Id="593" Count="4" />
+      <LineId Id="607" Count="0" />
+      <LineId Id="617" Count="1" />
+      <LineId Id="647" Count="1" />
+      <LineId Id="654" Count="2" />
+      <LineId Id="649" Count="0" />
+      <LineId Id="591" Count="0" />
+      <LineId Id="599" Count="0" />
+      <LineId Id="619" Count="1" />
+      <LineId Id="643" Count="0" />
+      <LineId Id="657" Count="0" />
+      <LineId Id="644" Count="0" />
+      <LineId Id="610" Count="0" />
+      <LineId Id="612" Count="0" />
+      <LineId Id="611" Count="0" />
+      <LineId Id="680" Count="1" />
+      <LineId Id="614" Count="1" />
+      <LineId Id="600" Count="1" />
+      <LineId Id="584" Count="0" />
+      <LineId Id="629" Count="0" />
+      <LineId Id="627" Count="0" />
+      <LineId Id="622" Count="3" />
+      <LineId Id="576" Count="0" />
+      <LineId Id="634" Count="0" />
+      <LineId Id="639" Count="2" />
+      <LineId Id="577" Count="0" />
+      <LineId Id="630" Count="0" />
+      <LineId Id="638" Count="0" />
+      <LineId Id="642" Count="0" />
+      <LineId Id="633" Count="0" />
+      <LineId Id="579" Count="0" />
+      <LineId Id="129" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="522" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="282" Count="0" />
+      <LineId Id="284" Count="1" />
+      <LineId Id="506" Count="0" />
+      <LineId Id="555" Count="0" />
+      <LineId Id="288" Count="0" />
+      <LineId Id="286" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="268" Count="0" />
+      <LineId Id="505" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="523" Count="6" />
+      <LineId Id="770" Count="0" />
+      <LineId Id="530" Count="7" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="218" Count="2" />
+      <LineId Id="771" Count="0" />
+      <LineId Id="221" Count="0" />
+      <LineId Id="224" Count="1" />
+      <LineId Id="222" Count="0" />
+      <LineId Id="136" Count="1" />
+      <LineId Id="226" Count="0" />
+      <LineId Id="228" Count="0" />
+      <LineId Id="538" Count="0" />
+      <LineId Id="230" Count="1" />
+      <LineId Id="233" Count="0" />
+      <LineId Id="232" Count="0" />
+      <LineId Id="138" Count="1" />
+      <LineId Id="247" Count="2" />
+      <LineId Id="253" Count="0" />
+      <LineId Id="485" Count="4" />
+      <LineId Id="254" Count="0" />
+      <LineId Id="252" Count="0" />
+      <LineId Id="250" Count="0" />
+      <LineId Id="143" Count="1" />
+      <LineId Id="257" Count="0" />
+      <LineId Id="270" Count="1" />
+      <LineId Id="682" Count="0" />
+      <LineId Id="676" Count="0" />
+      <LineId Id="303" Count="0" />
+      <LineId Id="279" Count="1" />
+      <LineId Id="272" Count="0" />
+      <LineId Id="269" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="85" Count="0" />
+      <LineId Id="353" Count="0" />
+      <LineId Id="357" Count="0" />
+      <LineId Id="356" Count="0" />
+      <LineId Id="354" Count="0" />
+      <LineId Id="359" Count="0" />
+      <LineId Id="358" Count="0" />
+      <LineId Id="355" Count="0" />
+      <LineId Id="40" Count="1" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="351" Count="0" />
+      <LineId Id="360" Count="2" />
+      <LineId Id="380" Count="0" />
+      <LineId Id="539" Count="0" />
+      <LineId Id="352" Count="0" />
+      <LineId Id="335" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="708" Count="2" />
+      <LineId Id="706" Count="1" />
+      <LineId Id="705" Count="0" />
+      <LineId Id="13" Count="2" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="16" Count="4" />
+      <LineId Id="318" Count="1" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="VisionStation.AssignStationStatusForHMI">
+      <LineId Id="6" Count="3" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="36" Count="1" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="38" Count="1" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="11" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="VisionStation.ClearVehicleTrigger">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="VisionStation.InspectionOnGoing.Get">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="VisionStation.IsFaulted">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="VisionStation.Ready.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="VisionStation.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="VisionStation.UpdatePartData">
+      <LineId Id="269" Count="97" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="VisionStation.UpdatePartForHMIStatus">
+      <LineId Id="6" Count="2" />
+      <LineId Id="10" Count="5" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="VisionStation.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="VisionStation.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

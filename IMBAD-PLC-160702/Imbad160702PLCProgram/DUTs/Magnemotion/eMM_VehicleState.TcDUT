@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eMM_VehicleState" Id="{6aa505f9-7064-41fc-ba39-fb76f2f2e7b6}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eMM_VehicleState :
+(
+	eVehIdle,
+	eVehMoveCmd_Send,
+	eVehMoveCmd_WaitAccept,
+	eVehMoveCmd_Reject,
+	eVehMoveCmd_WaitCompl,
+	eVehMoveCmd_Compl,
+	eVehMoveTimeOut,	
+	eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

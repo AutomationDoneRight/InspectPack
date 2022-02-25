@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <GVL Name="VIS_CONST" Id="{bc42dca5-0d7e-41d9-9f32-1be9a9642b3b}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+	Cmd_SwitchToRunMode : BYTE := 8;
+	Cmd_ClearError		: BYTE := 13;
+	Cmd_TriggerReset	: BYTE := 15;
+	Cmd_ChangeProgram	: BYTE := 24;
+	Cmd_ReadProgram 	: BYTE := 25;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

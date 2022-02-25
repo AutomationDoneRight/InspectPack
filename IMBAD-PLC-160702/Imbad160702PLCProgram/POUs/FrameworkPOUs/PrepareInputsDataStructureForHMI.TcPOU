@@ -1,0 +1,169 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="PrepareInputsDataStructureForHMI" Id="{48a22af6-8575-48b0-a6c5-0769affb6b02}" SpecialFunc="None">
+    <Declaration><![CDATA[// Fill up the appropriate data structure to send input data to the HMI 
+FUNCTION_BLOCK FINAL PrepareInputsDataStructureForHMI
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	UL_X: INT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[memset(ADR(GVL_IO.InputsForHMI[1]),0,SIZEOF(GVL_IO.InputsForHMI)); //clear out the input array
+
+// Load Station
+GVL_IO.InputsForHMI[1] := 	BOOL_TO_BYTE(GVL_IO.LD_XPalletHoldRetractEngage);
+GVL_IO.InputsForHMI[2] := 	BOOL_TO_BYTE(GVL_IO.LD_XPalletHoldDownExtendHome);
+GVL_IO.InputsForHMI[3] := 	BOOL_TO_BYTE(GVL_IO.LD_XPalletReleaseHome);
+GVL_IO.InputsForHMI[4] := 	BOOL_TO_BYTE(GVL_IO.LD_XPalletReleaseExtended);
+GVL_IO.InputsForHMI[15] := 	BOOL_TO_BYTE(GVL_IO.LD_XPalletCloseExtended_1_2);
+GVL_IO.InputsForHMI[16] := 	BOOL_TO_BYTE(GVL_IO.LD_XPalletCloseExtended_3_4);
+GVL_IO.InputsForHMI[17] := 	BOOL_TO_BYTE(GVL_IO.LD_XPalletCloseRetracted_1_2);
+GVL_IO.InputsForHMI[18] := 	BOOL_TO_BYTE(GVL_IO.LD_XPalletCloseRetracted_3_4);
+
+// Yushin Robot 
+GVL_IO.InputsForHMI[5] := 	BOOL_TO_BYTE(GVL_IO.YU_XPrepareToLoad);
+GVL_IO.InputsForHMI[6] := 	BOOL_TO_BYTE(GVL_IO.YU_XToolUp);           
+GVL_IO.InputsForHMI[7] := 	BOOL_TO_BYTE(GVL_IO.YU_XToolDown);
+GVL_IO.InputsForHMI[8] := 	BOOL_TO_BYTE(GVL_IO.YU_XLocBit0);
+GVL_IO.InputsForHMI[9] := 	BOOL_TO_BYTE(GVL_IO.YU_XLocBit1);
+
+// Burnoff
+GVL_IO.InputsForHMI[11] := 	BOOL_TO_BYTE(GVL_IO.BU_XAlarm);
+
+// Ionizer 
+GVL_IO.InputsForHMI[12] := 	BOOL_TO_BYTE(GVL_IO.IZ_XIonAlarm);
+GVL_IO.InputsForHMI[13] := 	BOOL_TO_BYTE(GVL_IO.IZ_XConditionAlarm);
+GVL_IO.InputsForHMI[14] := 	BOOL_TO_BYTE(GVL_IO.IZ_XAlarm);
+// borrowing 15,16,17,18 for Load Station Pallet Close inputs
+// Vision
+GVL_IO.InputsForHMI[21] := 	BOOL_TO_BYTE(GVL_IO.VS_XToolingLocationUpper);
+GVL_IO.InputsForHMI[22] := 	BOOL_TO_BYTE(GVL_IO.VS_XRun);
+GVL_IO.InputsForHMI[23] := 	BOOL_TO_BYTE(GVL_IO.VS_XReady1);
+GVL_IO.InputsForHMI[24] := 	BOOL_TO_BYTE(GVL_IO.VS_XReady2);
+GVL_IO.InputsForHMI[25] := 	BOOL_TO_BYTE(GVL_IO.VS_XReady3);
+GVL_IO.InputsForHMI[26] := 	BOOL_TO_BYTE(GVL_IO.VS_XReady4);
+GVL_IO.InputsForHMI[27] := 	BOOL_TO_BYTE(GVL_IO.VS_XCam1JudgeVal);
+GVL_IO.InputsForHMI[28] := 	BOOL_TO_BYTE(GVL_IO.VS_XCam2JudgeVal);
+GVL_IO.InputsForHMI[29] := 	BOOL_TO_BYTE(GVL_IO.VS_XCam3JudgeVal);
+GVL_IO.InputsForHMI[30] := 	BOOL_TO_BYTE(GVL_IO.VS_XCam4JudgeVal);
+GVL_IO.InputsForHMI[92] := 	BOOL_TO_BYTE(GVL_IO.VS_XPartEmpty);
+GVL_IO.InputsForHMI[93] :=  BOOL_TO_BYTE(GVL_IO.VS_XToolingLocationLower);
+GVL_IO.InputsForHMI[94] :=  BOOL_TO_BYTE(GVL_IO.VS_XPartPresentBeforeVision);
+
+// Piston Insert 
+GVL_IO.InputsForHMI[31] := 	BOOL_TO_BYTE(GVL_IO.PI_XPalletHoldDownHome);
+GVL_IO.InputsForHMI[32] := 	BOOL_TO_BYTE(GVL_IO.PI_XPalletHoldDownExtended);
+GVL_IO.InputsForHMI[33] := 	BOOL_TO_BYTE(GVL_IO.PI_XPistonPresentEscapement);
+GVL_IO.InputsForHMI[34] := 	BOOL_TO_BYTE(GVL_IO.PI_XEscapementAtInsertLoc);
+GVL_IO.InputsForHMI[35] := 	BOOL_TO_BYTE(GVL_IO.PI_XEscapementAtBowl);
+GVL_IO.InputsForHMI[36] := 	BOOL_TO_BYTE(GVL_IO.PI_XToolAt55_10_Barrel);
+GVL_IO.InputsForHMI[37] := 	BOOL_TO_BYTE(GVL_IO.PI_XToolAt3_30_Barrel);
+GVL_IO.InputsForHMI[38] := 	BOOL_TO_BYTE(GVL_IO.PI_XBarrelHoldDownHome);
+GVL_IO.InputsForHMI[39] := 	BOOL_TO_BYTE(GVL_IO.PI_XBarrelHoldDownExtended);
+
+//GVL_IO.InputsForHMI[40] := 1;
+GVL_IO.InputsForHMI[40] := BOOL_TO_BYTE(GVL_IO.PI_XMtrOUT0);
+GVL_IO.InputsForHMI[41] := BOOL_TO_BYTE(GVL_IO.PI_XMtrOUT1);
+GVL_IO.InputsForHMI[42] := BOOL_TO_BYTE(GVL_IO.PI_XMtrBusy);
+GVL_IO.InputsForHMI[43] := BOOL_TO_BYTE(GVL_IO.PI_XMtrServoEnabled);
+GVL_IO.InputsForHMI[44] := BOOL_TO_BYTE(GVL_IO.PI_XMtrServoHomed);
+GVL_IO.InputsForHMI[45] := BOOL_TO_BYTE(GVL_IO.PI_XMtrMoveCompl);
+GVL_IO.InputsForHMI[46] := BOOL_TO_BYTE(GVL_IO.PI_XMtrEStopped);
+GVL_IO.InputsForHMI[47] := BOOL_TO_BYTE(GVL_IO.PI_XMtrAlarm);
+
+
+// Cap Insert
+
+GVL_IO.InputsForHMI[56] := 	BOOL_TO_BYTE(GVL_IO.CP_XPalletHoldDownHome);
+GVL_IO.InputsForHMI[57] := 	BOOL_TO_BYTE(GVL_IO.CP_XPalletHoldDownExtended);
+GVL_IO.InputsForHMI[58] := 	BOOL_TO_BYTE(GVL_IO.CP_XCapSlideRetracted);
+GVL_IO.InputsForHMI[59] := 	BOOL_TO_BYTE(GVL_IO.CP_XCapSlideExtended);
+
+
+// Unload 
+
+GVL_IO.InputsForHMI[77] :=  BOOL_TO_BYTE(GVL_IO.UL_1_XPalletHoldDownRetracted_Engaged);
+GVL_IO.InputsForHMI[78] :=  BOOL_TO_BYTE(GVL_IO.UL_1_XPalletHoldDownExtended_Home);
+GVL_IO.InputsForHMI[79] := 	BOOL_TO_BYTE(GVL_IO.UL_1_XBarrelPresent);
+GVL_IO.InputsForHMI[80] :=  BOOL_TO_BYTE(GVL_IO.UL_2_XPalletHoldDownRetracted_Engaged);
+GVL_IO.InputsForHMI[81] :=  BOOL_TO_BYTE(GVL_IO.UL_2_XPalletHoldDownExtended_Home);
+GVL_IO.InputsForHMI[82] := 	BOOL_TO_BYTE(GVL_IO.UL_2_XBarrelPresent);
+GVL_IO.InputsForHMI[83] :=  BOOL_TO_BYTE(GVL_IO.UL_3_XPalletHoldDownRetracted_Engaged);
+GVL_IO.InputsForHMI[84] :=  BOOL_TO_BYTE(GVL_IO.UL_3_XPalletHoldDownExtended_Home);
+GVL_IO.InputsForHMI[85] := 	BOOL_TO_BYTE(GVL_IO.UL_3_XBarrelPresent);
+GVL_IO.InputsForHMI[86] :=  BOOL_TO_BYTE(GVL_IO.UL_4_XPalletHoldDownRetracted_Engaged);
+GVL_IO.InputsForHMI[87] :=  BOOL_TO_BYTE(GVL_IO.UL_4_XPalletHoldDownExtended_Home);
+GVL_IO.InputsForHMI[88] := 	BOOL_TO_BYTE(GVL_IO.UL_4_XBarrelPresent);
+
+
+// bagger
+GVL_IO.InputsForHMI[91] := 	BOOL_TO_BYTE(GVL_IO.BG_XBaggerBusy);
+//borrowing 92 for vision
+// borrowing 93 for vision
+// borrow 94 for vision
+GVL_IO.InputsForHMI[115] := 	BOOL_TO_BYTE(GVL_IO.BG_XBagsLow);
+GVL_IO.InputsForHMI[116] := 	BOOL_TO_BYTE(GVL_IO.BG_XBaggerOKNoFault);
+GVL_IO.InputsForHMI[117] := 	BOOL_TO_BYTE(GVL_IO.BG_XBaggerWaitingForLabel);
+GVL_IO.InputsForHMI[118] := 	BOOL_TO_BYTE(GVL_IO.BG_XBaggerReadyForFiller);
+
+
+GVL_IO.InputsForHMI[95] := 	BOOL_TO_BYTE(GVL_IO.BG_XChute1Closed);
+GVL_IO.InputsForHMI[96] := 	BOOL_TO_BYTE(GVL_IO.BG_XChute1Open);
+GVL_IO.InputsForHMI[97] := 	BOOL_TO_BYTE(GVL_IO.BG_XChute2Closed);
+GVL_IO.InputsForHMI[98] := 	BOOL_TO_BYTE(GVL_IO.BG_XChute2Open);
+GVL_IO.InputsForHMI[99] := 	BOOL_TO_BYTE(GVL_IO.BG_XChute3Closed);
+GVL_IO.InputsForHMI[100] := BOOL_TO_BYTE(GVL_IO.BG_XChute3Open);  
+GVL_IO.InputsForHMI[108] := BOOL_TO_BYTE(GVL_IO.BG_XChute4Closed);
+GVL_IO.InputsForHMI[109] := BOOL_TO_BYTE(GVL_IO.BG_XChute4Open);  
+
+
+
+// Reject Station 
+GVL_IO.InputsForHMI[101] := 	BOOL_TO_BYTE(GVL_IO.RJ_XRejectCylinderHome);
+GVL_IO.InputsForHMI[102] := 	BOOL_TO_BYTE(GVL_IO.RJ_XRejectCylinderExtended);
+//GVL_IO.InputsForHMI[103] := 	BOOL_TO_BYTE(GVL_IO.RJ_XPalletReleaseHome);
+//GVL_IO.InputsForHMI[104] := 	BOOL_TO_BYTE(GVL_IO.RJ_XPalletReleaseExtended);
+GVL_IO.InputsForHMI[105] := 	BOOL_TO_BYTE(GVL_IO.RJ_XPartPresent);
+GVL_IO.InputsForHMI[106] := 	BOOL_TO_BYTE(GVL_IO.RJ_XPalletHoldDownRetracted_Engaged);
+GVL_IO.InputsForHMI[107] := 	BOOL_TO_BYTE(GVL_IO.RJ_XPalletHoldDownExtended_Home);
+// borrowing 108 and 109 for Autobagger inputs
+
+// Main Control System
+GVL_IO.InputsForHMI[111] := 	BOOL_TO_BYTE(GVL_IO.MC_XAirPressureOK);
+GVL_IO.InputsForHMI[112] := 	BOOL_TO_BYTE(GVL_IO.MC_XStartPB);
+GVL_IO.InputsForHMI[113] := 	BOOL_TO_BYTE(GVL_IO.MC_XStopPB);
+GVL_IO.InputsForHMI[114] := 	BOOL_TO_BYTE(GVL_IO.MC_NotEStopped);
+// borrowing 115,116,117,118 for bagger inputs
+                             ]]></ST>
+    </Implementation>
+    <LineIds Name="PrepareInputsDataStructureForHMI">
+      <LineId Id="260" Count="6" />
+      <LineId Id="407" Count="3" />
+      <LineId Id="267" Count="53" />
+      <LineId Id="325" Count="4" />
+      <LineId Id="332" Count="2" />
+      <LineId Id="338" Count="2" />
+      <LineId Id="343" Count="0" />
+      <LineId Id="421" Count="1" />
+      <LineId Id="420" Count="0" />
+      <LineId Id="424" Count="1" />
+      <LineId Id="423" Count="0" />
+      <LineId Id="427" Count="1" />
+      <LineId Id="426" Count="0" />
+      <LineId Id="429" Count="0" />
+      <LineId Id="356" Count="5" />
+      <LineId Id="441" Count="4" />
+      <LineId Id="389" Count="4" />
+      <LineId Id="395" Count="2" />
+      <LineId Id="394" Count="0" />
+      <LineId Id="387" Count="1" />
+      <LineId Id="362" Count="15" />
+      <LineId Id="439" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

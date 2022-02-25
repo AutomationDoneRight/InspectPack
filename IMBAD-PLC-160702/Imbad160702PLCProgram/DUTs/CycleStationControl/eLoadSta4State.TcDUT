@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eLoadSta4State" Id="{dcbe3149-904e-49d8-bef4-8eb4b594b24c}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eLoadSta4State :
+( 
+	eUnknown :=451,
+    eInit,
+	eHoming,
+	eReady,
+	eDwell,
+	eWaitForLoadComplete,
+	eProcessing,
+	eDepart,
+	eStopActive,
+    eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

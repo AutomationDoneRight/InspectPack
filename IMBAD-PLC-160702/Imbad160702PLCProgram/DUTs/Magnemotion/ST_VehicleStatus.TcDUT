@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_VehicleStatus" Id="{8ac7644a-3644-46f6-86a8-95d5df5884dd}">
+    <Declaration><![CDATA[TYPE ST_VehicleStatus :
+STRUCT
+	VehicleID			:	UINT; // 2 bytes
+	VehiclePresent		:	BYTE; // 1 byte 
+	PathID				:	UINT; // 2 bytes 
+	DestinationPathID	:	UINT; // 2 bytes
+	VehiclePos			: 	REAL; // 4 bytes
+	Velocity			: 	REAL; // 4 bytes 
+	VehicleCmdType		: 	BYTE; // 1 byte
+	VehicleFlags		: 	BYTE; // 1 byte
+	VehicleCmdPos		: 	REAL; // 4 bytes
+	junk				:   BYTE; // 1 byte
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_B1Res" Id="{9f7dbaed-666d-4782-a7ef-1102914e6189}">
+    <Declaration><![CDATA[(* B1 = Move Vehicle to Position *)
+TYPE ST_B1Res :
+STRUCT
+	OrderNumb		:UDINT;		(* 4 bytes*)
+	VehicleID		:UINT;		(* 2 bytes*)	
+	Position		:REAL;	    (* 4 bytes*)
+	PathID			:UINT;		(*2 bytes*)
+	AccnLimit		:REAL;		(* 4 bytes*)
+	VelocityLimit	:REAL;		(*4 bytes*)
+	Flags			:BYTE;      (*1 byte*)
+	(*FollowID	    :UINT*)	    (*2 bytes *) 
+	CRC1			:BYTE;	    (* 1 byte*)
+	CRC2			:BYTE;	    (* 1 byte*)	
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

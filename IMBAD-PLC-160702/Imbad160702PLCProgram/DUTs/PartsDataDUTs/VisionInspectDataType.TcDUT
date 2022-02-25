@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="VisionInspectDataType" Id="{46ec1c44-f5a7-457a-a056-24a40a0f6b1d}">
+    <Declaration><![CDATA[TYPE VisionInspectDataType :
+STRUCT
+	Cam1Judgement : BOOL;
+	Cam2Judgement : BOOL;
+	Cam3Judgement : BOOL;
+	Cam4Judgement : BOOL;
+	//Short Shot
+    MaxIndividualStainArea		   : REAL;
+	MinIndividualStainArea	 		 : REAL;
+	ModifiedStainArea	 : REAL;
+	ModifiedMaxStain     : REAL;
+	XPosCam1			 : REAL;
+	YPosCam1			 : REAL;
+	//Stain
+	UpperFlawAreaCam2	  :DINT;
+	LowerFlawAreaCam2	 : DINT;
+	UpperFlawCountCam2	 : DINT;
+	LowerFlawCountCam2	 : DINT;
+	XPosAdjustCam2		 : REAL;
+	UpperFlawAreaCam3	 : DINT;
+	LowerFlawAreaCam3	 : DINT;
+	UpperFlawCountCam3	 : DINT;
+	LowerFlawCountCam3	 : DINT;
+	XPosAdjustCam3		 : REAL;
+	UpperFlawAreaCam4	 : DINT;
+	LowerFlawAreaCam4	 : DINT;
+	UpperFlawCountCam4	 : DINT;
+	LowerFlawCountCam4	 : DINT;
+	XPosAdjustCam4		 : REAL;
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

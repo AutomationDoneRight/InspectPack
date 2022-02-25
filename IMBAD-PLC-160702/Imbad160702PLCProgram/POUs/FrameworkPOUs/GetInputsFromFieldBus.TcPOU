@@ -1,0 +1,199 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="GetInputsFromFieldBus" Id="{6745df12-7ae9-4417-8429-56c625094007}" SpecialFunc="None">
+    <Declaration><![CDATA[// Fill up the appropriate IO from the inputs coming from the field which are not directly addressable in the linking of variables
+FUNCTION_BLOCK FINAL GetInputsFromFieldBus
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	SMCMtrPosRawByte3 : DWORD;
+	SMCMtrPosRawByte2 : DWORD;
+	SMCMtrPosRawByte1 : DWORD;
+	SMCMtrPosRawByte0 : DWORD;
+	SMCMtrPosRaw	  : DINT;	
+	
+	RawByte3: DWORD;
+	RawByte2: DWORD;
+	RawByte1: DWORD;
+	RawByte0: DWORD;
+	RawDWORD : DWORD;
+	UL: INT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[GVL_IO.PI_XMtrOUT0 := GVL_IO.SMC_LEY_XUINT0.0;
+GVL_IO.PI_XMtrOUT1 := GVL_IO.SMC_LEY_XUINT0.1;  
+GVL_IO.PI_XMtrOUT2 := GVL_IO.SMC_LEY_XUINT0.2; 
+GVL_IO.PI_XMtrOUT3 := GVL_IO.SMC_LEY_XUINT0.3; 
+GVL_IO.PI_XMtrOUT4 := GVL_IO.SMC_LEY_XUINT0.4; 
+GVL_IO.PI_XMtrOUT5 := GVL_IO.SMC_LEY_XUINT0.5; 
+
+GVL_IO.PI_XMtrBusy 			:= GVL_IO.SMC_LEY_XUINT0.8;
+GVL_IO.PI_XMtrServoEnabled 	:= GVL_IO.SMC_LEY_XUINT0.9;
+GVL_IO.PI_XMtrServoHomed 	:= GVL_IO.SMC_LEY_XUINT0.10; 
+GVL_IO.PI_XMtrMoveCompl 	:= GVL_IO.SMC_LEY_XUINT0.11;
+GVL_IO.PI_XMtrEStopped 		:= GVL_IO.SMC_LEY_XUINT0.12;
+GVL_IO.PI_XMtrAlarm 		:= GVL_IO.SMC_LEY_XUINT0.13;
+GVL_IO.PI_XMtrReady			:= GVL_IO.SMC_LEY_XUINT1.4;
+
+GVL_IO.PI_XMtrCurrPos := DINT_TO_REAL(GVL_IO.SMC_LEY_XCurrMtrPos)/100;
+
+//GVL_IO.MC_NotEStopped := GVL_IO.MC_XAirPressureOK; // overriding this until MOV is in place
+GVL_IO.MachineEStopped := NOT GVL_IO.MC_NotEStopped; // Better code readability 
+
+GVL_IO.UL_XPP_DriveEnabled := GVL_IO.UL_XPP_Byte4.0;
+GVL_IO.UL_XPP_StopActive := GVL_IO.UL_XPP_Byte4.1;
+GVL_IO.UL_XPP_ReferenceOK := GVL_IO.UL_XPP_Byte4.2;
+GVL_IO.UL_XPP_ReadyToStart := GVL_IO.UL_XPP_Byte4.3;
+GVL_IO.UL_XPP_Alarm := GVL_IO.UL_XPP_Byte4.4;
+GVL_IO.UL_XPP_A1OUT := GVL_IO.UL_XPP_Byte4.5;
+GVL_IO.UL_XPP_A2OUT := GVL_IO.UL_XPP_Byte4.6;
+GVL_IO.UL_XPP_A3OUT := GVL_IO.UL_XPP_Byte4.7;
+GVL_IO.UL_XPP_LubeLevel := GVL_IO.UL_XPP_Byte5.0;
+
+// Vision 
+
+GVL_IO.VS_XCmdCmpl := GVL_IO.VS_XByte0.0;
+GVL_IO.VS_XCmdErr  := GVL_IO.VS_XByte0.1;
+GVL_IO.VS_XCmdReady := GVL_IO.VS_XByte0.2;
+GVL_IO.VS_XResultReady := GVL_IO.VS_XByte0.3;
+GVL_IO.VS_XResultOR := GVL_IO.VS_XByte0.4;
+GVL_IO.VS_XCmdResult := GVL_IO.VS_XByte20;
+GVL_IO.VS_XCmdData1 := GVL_IO.VS_XByte24;
+GVL_IO.VS_XCmdData2 := GVL_IO.VS_XByte28;
+
+GVL_IO.VS_XReady1 := GVL_IO.VS_XByte1.0;
+GVL_IO.VS_XReady2 := GVL_IO.VS_XByte1.1;
+GVL_IO.VS_XReady3 := GVL_IO.VS_XByte1.2;
+GVL_IO.VS_XReady4 := GVL_IO.VS_XByte1.3;
+
+GVL_IO.VS_XAck1 := GVL_IO.VS_XByte2.0;
+GVL_IO.VS_XAck2 := GVL_IO.VS_XByte2.1;
+GVL_IO.VS_XAck3 := GVL_IO.VS_XByte2.2;
+GVL_IO.VS_XAck4 := GVL_IO.VS_XByte2.3;
+
+GVL_IO.VS_XBusy :=  GVL_IO.VS_XByte3.0;
+GVL_IO.VS_XError := GVL_IO.VS_XByte3.1;
+GVL_IO.VS_XRun :=   GVL_IO.VS_XByte3.3;
+
+GVL_IO.VS_XAllCamJudgeVal := GVL_IO.VS_XByte4.0;
+GVL_IO.VS_XCam1JudgeVal := GVL_IO.VS_XByte4.1;
+GVL_IO.VS_XCam2JudgeVal := GVL_IO.VS_XByte4.2;
+GVL_IO.VS_XCam3JudgeVal := GVL_IO.VS_XByte4.3;
+GVL_IO.VS_XCam4JudgeVal := GVL_IO.VS_XByte4.4;
+GVL_IO.VS_XPartEmpty :=    GVL_IO.VS_XByte4.5;
+
+GVL_IO.VS_XMaxIndividualStainArea := DINT_TO_REAL(GetRawDword(Byte0 := GVL_IO.VS_XByte48, Byte1:= GVL_IO.VS_XByte49, Byte2:= GVL_IO.VS_XByte50, Byte3:= GVL_IO.VS_XByte51))/ 1000;
+GVL_IO.VS_XMinIndividualStainArea := DINT_TO_REAL(GetRawDword(Byte0 := GVL_IO.VS_XByte52, Byte1:= GVL_IO.VS_XByte53, Byte2:= GVL_IO.VS_XByte54, Byte3:= GVL_IO.VS_XByte55))/ 1000;
+GVL_IO.VS_XModifiedStainArea	:= DINT_TO_REAL(GetRawDword(Byte0 := GVL_IO.VS_XByte56, Byte1:= GVL_IO.VS_XByte57, Byte2:= GVL_IO.VS_XByte58, Byte3:= GVL_IO.VS_XByte59))/ 1000;
+GVL_IO.VS_XModifiedMaxStain		:= DINT_TO_REAL(GetRawDword(Byte0 := GVL_IO.VS_XByte60, Byte1:= GVL_IO.VS_XByte61, Byte2:= GVL_IO.VS_XByte62, Byte3:= GVL_IO.VS_XByte63))/ 1000;
+GVL_IO.VS_XYPosCam1 			:= DINT_TO_REAL(GetRawDword(Byte0 := GVL_IO.VS_XByte64, Byte1:= GVL_IO.VS_XByte65, Byte2:= GVL_IO.VS_XByte66, Byte3:= GVL_IO.VS_XByte67))/ 1000;
+
+GVL_IO.VS_XUpperFlawAreaCam2	:= GetRawDword(Byte0 := GVL_IO.VS_XByte68, Byte1:= GVL_IO.VS_XByte69, Byte2:= GVL_IO.VS_XByte70, Byte3:= GVL_IO.VS_XByte71);
+GVL_IO.VS_XLowerFlawAreaCam2	:= GetRawDword(Byte0 := GVL_IO.VS_XByte72, Byte1:= GVL_IO.VS_XByte73, Byte2:= GVL_IO.VS_XByte74, Byte3:= GVL_IO.VS_XByte75);
+GVL_IO.VS_XUpperFlawCountCam2	:= GetRawDword(Byte0 := GVL_IO.VS_XByte76, Byte1:= GVL_IO.VS_XByte77, Byte2:= GVL_IO.VS_XByte78, Byte3:= GVL_IO.VS_XByte79);
+GVL_IO.VS_XLowerFlawCountCam2	:= GetRawDword(Byte0 := GVL_IO.VS_XByte80, Byte1:= GVL_IO.VS_XByte81, Byte2:= GVL_IO.VS_XByte82, Byte3:= GVL_IO.VS_XByte83);
+
+GVL_IO.VS_XUpperFlawAreaCam3	:= GetRawDword(Byte0 := GVL_IO.VS_XByte88, Byte1:= GVL_IO.VS_XByte89, Byte2:= GVL_IO.VS_XByte90, Byte3:= GVL_IO.VS_XByte91);
+GVL_IO.VS_XLowerFlawAreaCam3	:= GetRawDword(Byte0 := GVL_IO.VS_XByte92, Byte1:= GVL_IO.VS_XByte93, Byte2:= GVL_IO.VS_XByte94, Byte3:= GVL_IO.VS_XByte95);
+GVL_IO.VS_XUpperFlawCountCam3	:= GetRawDword(Byte0 := GVL_IO.VS_XByte96, Byte1:= GVL_IO.VS_XByte97, Byte2:= GVL_IO.VS_XByte98, Byte3:= GVL_IO.VS_XByte99);
+GVL_IO.VS_XLowerFlawCountCam3	:= GetRawDword(Byte0 := GVL_IO.VS_XByte100, Byte1:= GVL_IO.VS_XByte101, Byte2:= GVL_IO.VS_XByte102, Byte3:= GVL_IO.VS_XByte103);
+
+GVL_IO.VS_XUpperFlawAreaCam4	:= GetRawDword(Byte0 := GVL_IO.VS_XByte108, Byte1:= GVL_IO.VS_XByte109, Byte2:= GVL_IO.VS_XByte110, Byte3:= GVL_IO.VS_XByte111);
+GVL_IO.VS_XLowerFlawAreaCam4	:= GetRawDword(Byte0 := GVL_IO.VS_XByte112, Byte1:= GVL_IO.VS_XByte113, Byte2:= GVL_IO.VS_XByte114, Byte3:= GVL_IO.VS_XByte115);
+GVL_IO.VS_XUpperFlawCountCam4	:= GetRawDword(Byte0 := GVL_IO.VS_XByte116, Byte1:= GVL_IO.VS_XByte117, Byte2:= GVL_IO.VS_XByte118, Byte3:= GVL_IO.VS_XByte119);
+GVL_IO.VS_XLowerFlawCountCam4	:= GetRawDword(Byte0 := GVL_IO.VS_XByte120, Byte1:= GVL_IO.VS_XByte121, Byte2:= GVL_IO.VS_XByte122, Byte3:= GVL_IO.VS_XByte123);
+
+
+// Some HMI ADS related data
+
+IF (LotsData.Lot.BarrelSizeInt = 55) THEN
+	LotsData.Lot.BarrelSize := eBarrelType.Size55cc;
+ELSIF (LotsData.Lot.BarrelSizeInt = 30) THEN
+	LotsData.Lot.BarrelSize := eBarrelType.Size30cc;
+ELSIF (LotsData.Lot.BarrelSizeInt = 10) THEN
+	LotsData.Lot.BarrelSize := eBarrelType.Size10cc;
+ELSIF (LotsData.Lot.BarrelSizeInt = 5) THEN
+	LotsData.Lot.BarrelSize := eBarrelType.Size5cc;
+ELSIF (LotsData.Lot.BarrelSizeInt = 3) THEN
+	LotsData.Lot.BarrelSize := eBarrelType.Size3cc;
+ELSE
+	LotsData.Lot.BarrelSize := eBarrelType.Size55cc;
+END_IF
+
+IF (LotsData.Lot.VisionStationRunSelectInt = 0) THEN
+	LotsData.Lot.VisionStationRunSelect := eVisionEnableState.Disabled;
+ELSIF (LotsData.Lot.VisionStationRunSelectInt = 1) THEN
+	LotsData.Lot.VisionStationRunSelect := eVisionEnableState.Enabled;
+ELSIF (LotsData.Lot.VisionStationRunSelectInt = 2) THEN
+	LotsData.Lot.VisionStationRunSelect := eVisionEnableState.DataCollectOnly;
+END_IF                                  ]]></ST>
+    </Implementation>
+    <Method Name="GetRawDword" Id="{24142c5b-0802-4cf4-b436-344e341f7694}">
+      <Declaration><![CDATA[METHOD PUBLIC GetRawDword : DINT
+VAR_INPUT
+	Byte0: DWORD;
+	Byte1: DWORD;
+	Byte2: DWORD;
+	Byte3: DWORD;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[GetRawDword := SHL(Byte3,24) OR SHL(Byte2,16) OR SHL(Byte1,8) OR Byte0;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="GetInputsFromFieldBus">
+      <LineId Id="441" Count="12" />
+      <LineId Id="424" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="474" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="103" Count="1" />
+      <LineId Id="110" Count="2" />
+      <LineId Id="105" Count="1" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="113" Count="1" />
+      <LineId Id="130" Count="5" />
+      <LineId Id="158" Count="1" />
+      <LineId Id="379" Count="0" />
+      <LineId Id="378" Count="0" />
+      <LineId Id="380" Count="0" />
+      <LineId Id="160" Count="2" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="164" Count="5" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="137" Count="0" />
+      <LineId Id="171" Count="3" />
+      <LineId Id="194" Count="0" />
+      <LineId Id="175" Count="2" />
+      <LineId Id="357" Count="0" />
+      <LineId Id="178" Count="0" />
+      <LineId Id="261" Count="0" />
+      <LineId Id="231" Count="0" />
+      <LineId Id="262" Count="0" />
+      <LineId Id="401" Count="0" />
+      <LineId Id="403" Count="0" />
+      <LineId Id="223" Count="0" />
+      <LineId Id="265" Count="5" />
+      <LineId Id="272" Count="7" />
+      <LineId Id="271" Count="0" />
+      <LineId Id="301" Count="3" />
+      <LineId Id="306" Count="0" />
+      <LineId Id="308" Count="7" />
+      <LineId Id="317" Count="0" />
+      <LineId Id="319" Count="0" />
+      <LineId Id="318" Count="0" />
+      <LineId Id="320" Count="3" />
+      <LineId Id="334" Count="0" />
+      <LineId Id="305" Count="0" />
+      <LineId Id="335" Count="1" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="GetInputsFromFieldBus.GetRawDword">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

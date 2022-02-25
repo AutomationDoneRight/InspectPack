@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eIB_StopRobotClearStaState" Id="{e5bcaae3-7a36-4fcc-99a5-053e8e965954}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eIB_StopRobotClearStaState :
+( 
+	eUnknown :=201,
+    eInit,
+	eHoming,
+	eReady,
+	eDwell,
+	eProcessing,
+	eDepart,
+	eStopActive,
+    eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

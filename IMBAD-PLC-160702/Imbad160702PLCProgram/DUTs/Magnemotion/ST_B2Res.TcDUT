@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_B2Res" Id="{003dacb6-de69-4b4e-b3a0-bd2ef207b95b}">
+    <Declaration><![CDATA[(* B2 = Statrup *)
+TYPE ST_B2Res :
+STRUCT
+	PathID			:UINT;		(* 2 bytes*)
+	CRC1			:BYTE;	    (* 1 byte*)
+	CRC2			:BYTE;	    (* 1 byte*)	
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

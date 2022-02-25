@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <DUT Name="eGoodULNewStaState" Id="{19f8a156-62ba-4a62-b04b-e3eb3dd0610f}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eGoodULNewStaState :
+( 
+	eUnknown := 701,
+    eInit,
+	eHoming,
+	eReady,
+	eDisabledReady,
+	eWaitForVehicleTrigger,
+	eDwell,
+	eCheckChuteCount,
+	eSendPalletHoldDownExtend,
+	eCheckPalletHoldDownExtended,
+	ePalletReleaseExtend,
+	ePalletReleaseExtended,
+	eKnockoffPart,
+	eKnockoffExtended,
+	eCheckPartKnockedOff,
+	ePalletHoldDownRelease,
+	ePalletHoldDownReleased,
+	eDepart,
+	eStopActive,
+    eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

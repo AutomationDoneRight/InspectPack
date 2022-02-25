@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_B1Cmd" Id="{111e0466-978f-47a8-837a-67ddc5b46bae}">
+    <Declaration><![CDATA[(* B1 = Move Vehicle to Position *)
+TYPE ST_B1Cmd :
+STRUCT
+	Cmd_Header	:BYTE	:=16#B1;	(* 1 byte*)
+	OrderNumb	:UDINT	:=0;		(* 4 bytes*)
+	VehicleID	:UINT	:=0;		(* 2 bytes*)
+	Flags		:BYTE	:=0;		(* 1 bytes*)
+	Position	:REAL	:=0.0;     (* 4 bytes*)
+	PathID		:UINT	:=0; 		(*2 bytes*)
+	Accn		:REAL	:=0.0; 		(* 4 bytes*)
+	Velocity	:REAL	:=0.0; 		(*4 bytes*)
+	FollowID	:UINT	:=0; 		(*2 bytes *) 
+	CRC			:UINT   :=0;        (*2 bytes *) 
+    //CRC1		:BYTE	:=16#00;    (* 1 byte*)
+	//CRC2		:BYTE	:=16#00;    (* 2 byte*)
+	
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

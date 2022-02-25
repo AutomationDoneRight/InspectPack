@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eVisionEnableState" Id="{2a1a4cc6-5122-4b46-999c-4a1a8fd84933}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eVisionEnableState :
+(	
+	Disabled :=0,
+	Enabled,
+	DataCollectOnly
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

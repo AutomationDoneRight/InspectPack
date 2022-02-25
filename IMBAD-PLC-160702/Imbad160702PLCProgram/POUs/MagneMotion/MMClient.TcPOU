@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="MMClient" Id="{50746fd0-a19b-4fb2-a546-737733f9d60a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC MMClient
+VAR_INPUT
+	sSrvNetID	: T_AmsNetID	:= '';(* TwinCAT TCP/IP server network address *)
+	sRemoteHost	: T_IPv4Addr 	:= '192.168.0.61';(* Server IP network address *)
+	nRemotePort	: UDINT 		:= 799;(* Server port number *)
+	bEnable		: BOOL 			:= TRUE;(* TRUE => enable client data exchange, FALSE => disable *)
+	bLog		: BOOL 			:= FALSE;//TRUE;(* TRUE => Enable log message output, FALSE => Disable *)
+	sPrefix		: STRING 		:= 'MM CLIENT::';(* Log message description string (allows the identification of log message source) *)
+END_VAR
+VAR_OUTPUT
+	eState		: E_SocketConnectionState := eSOCKET_DISCONNECTED;(* TCP/IP connection state *)
+END_VAR
+VAR 
+	fbConnection	: HLCConnection;(* Client data exchange control function block *)
+	fbTx 			: FB_Tx_FrameFifo;(* Tx fifo *)
+	fbRx 			: FB_Rx_FrameFifo;(* Rx fifo *)
+	fbLog			: FB_LogFifo;(* Log/debug/error fifo *)
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[fbConnection( 	sSrvNetID := sSrvNetID, fbRx := fbRx, fbTx := fbTx, fbLog := fbLog, 
+				bEnable := bEnable, sRemoteHost := sRemoteHost, nRemotePort := nRemotePort,  
+				bLog := bLog, sPrefix := sPrefix, eState=>eState );
+]]></ST>
+    </Implementation>
+    <LineIds Name="MMClient">
+      <LineId Id="21" Count="1" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

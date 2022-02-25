@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ePrimeMoverState" Id="{360cb8a8-e8df-4293-ae40-1a1c09b4a4b7}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE ePrimeMoverState :
+(
+	eMMUnknown :=651,
+    eMMConnect,
+	eMMCheckStatus,
+	eMMSendResetCmd,
+	eMMWaitAccceptResetCmd,
+	eMMWaitCmplResetCmd,
+	eMMSendStartupCmd,
+	eMMWaitAcceptStartupCmd,
+	eMMWaitCmplStartupCmd,
+	eMMWaitCycleControlTrigger,
+	eMMSendAllVehiclesToInitPosCmd,
+	eMMWaitCmplAllVehiclesAtInitPos,
+	eMMReadyAutoRun,
+	eMMSuspendMovement,
+	eMMESTOP,
+	eMMResumeMovement,
+	eStopActive,
+	eMMError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

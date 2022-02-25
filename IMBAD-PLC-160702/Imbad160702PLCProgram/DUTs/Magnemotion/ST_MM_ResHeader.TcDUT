@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_MM_ResHeader" Id="{5905dc3d-0053-499a-ac46-5cc0744177ea}">
+    <Declaration><![CDATA[TYPE ST_MM_ResHeader :
+STRUCT
+	ResHeader   :BYTE;	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

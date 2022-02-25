@@ -1,0 +1,145 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="PrepareOutputsDataStructureForHMI" Id="{9d58ddd3-fcff-410d-a0a4-7e608fb5076a}" SpecialFunc="None">
+    <Declaration><![CDATA[// Fill up the appropriate data structure to send input data to the HMI 
+FUNCTION_BLOCK FINAL PrepareOutputsDataStructureForHMI
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[memset(ADR(GVL_IO.OutputsForHMI[1]),0,SIZEOF(GVL_IO.InputsForHMI)); //clear out the output array
+
+// Load Position Outputs 
+
+GVL_IO.OutputsForHMI[1] 	:= BOOL_TO_BYTE(GVL_IO.LD_YPalletHoldDownRetractEngage);
+GVL_IO.OutputsForHMI[2] 	:= BOOL_TO_BYTE(GVL_IO.LD_YPalletHoldDownExtendHome);
+GVL_IO.OutputsForHMI[3] 	:= BOOL_TO_BYTE(GVL_IO.LD_YPalletReleaseExtend);
+GVL_IO.OutputsForHMI[4] 	:= BOOL_TO_BYTE(GVL_IO.LD_YPalletReleaseRetract);
+GVL_IO.OutputsForHMI[8]     := BOOL_TO_BYTE(GVL_IO.LD_YPalletCloseExtend);
+GVL_IO.OutputsForHMI[9]     := BOOL_TO_BYTE(GVL_IO.LD_YPalletCloseRetract);
+
+// Yushin Robot Interface Outputs
+
+GVL_IO.OutputsForHMI[5] 	:= BOOL_TO_BYTE(GVL_IO.YU_YOkToLoad);
+GVL_IO.OutputsForHMI[6] 	:= BOOL_TO_BYTE(GVL_IO.YU_YAckPartsHeld);
+GVL_IO.OutputsForHMI[10]    := BOOL_TO_BYTE(GVL_IO.YU_YIMBADIsOK);
+
+//Ionizer Outputs
+
+GVL_IO.OutputsForHMI[7] 	:= BOOL_TO_BYTE(GVL_IO.IZ_YInterrupt);
+//GVL_IO.OutputsForHMI[8]     := BOOL_TO_BYTE(GVL_IO.IZ_YIonizerAirON);
+//GVL_IO.OutputsForHMI[9]     := BOOL_TO_BYTE(GVL_IO.IZ_YIonizerAirOFF);
+// give 10 to Yushin
+
+// Vision
+GVL_IO.OutputsForHMI[21] 	:= BOOL_TO_BYTE(GVL_IO.VS_YBarrelLED);
+GVL_IO.OutputsForHMI[22] 	:= BOOL_TO_BYTE(GVL_IO.VS_YCmdRequest);
+GVL_IO.OutputsForHMI[23] 	:= BOOL_TO_BYTE(GVL_IO.VS_YResultAck);
+GVL_IO.OutputsForHMI[24] 	:= BOOL_TO_BYTE(GVL_IO.VS_YErrorReset);
+GVL_IO.OutputsForHMI[25] 	:= BOOL_TO_BYTE(GVL_IO.VS_YTrigger1);
+GVL_IO.OutputsForHMI[26] 	:= BOOL_TO_BYTE(GVL_IO.VS_YTrigger2);
+GVL_IO.OutputsForHMI[27] 	:= BOOL_TO_BYTE(GVL_IO.VS_YTrigger3);
+GVL_IO.OutputsForHMI[28] 	:= BOOL_TO_BYTE(GVL_IO.VS_YTrigger4);
+
+
+// Piston Insert 
+GVL_IO.OutputsForHMI[31] 	:= BOOL_TO_BYTE(GVL_IO.PI_YPalletHoldDownExtend);
+GVL_IO.OutputsForHMI[32] 	:= BOOL_TO_BYTE(GVL_IO.PI_YPalletHoldDownRetract);
+GVL_IO.OutputsForHMI[33] 	:= BOOL_TO_BYTE(GVL_IO.PI_YEscapementToBowl);
+GVL_IO.OutputsForHMI[34] 	:= BOOL_TO_BYTE(GVL_IO.PI_YEscapementToWork);
+GVL_IO.OutputsForHMI[35] 	:= BOOL_TO_BYTE(GVL_IO.PI_YBarrelBackupExtend);
+GVL_IO.OutputsForHMI[36] 	:= BOOL_TO_BYTE(GVL_IO.PI_YBarrelBackupRetract);
+GVL_IO.OutputsForHMI[37] 	:= BOOL_TO_BYTE(GVL_IO.PI_YPistonBowlON);
+GVL_IO.OutputsForHMI[38] 	:= BOOL_TO_BYTE(GVL_IO.PI_YPistonBowlOFF);
+
+GVL_IO.OutputsForHMI[40] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrStepSelectIN0);
+GVL_IO.OutputsForHMI[41] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrStepSelectIN1);
+GVL_IO.OutputsForHMI[42] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrStepSelectIN2);
+GVL_IO.OutputsForHMI[43] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrHoldMove);
+GVL_IO.OutputsForHMI[44] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrSetEnable);
+GVL_IO.OutputsForHMI[45] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrDriveStepTrigger);
+GVL_IO.OutputsForHMI[46] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrReset);
+GVL_IO.OutputsForHMI[47] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrGoHome);
+GVL_IO.OutputsForHMI[48] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrJogNeg);
+GVL_IO.OutputsForHMI[49] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrJogPos);
+GVL_IO.OutputsForHMI[50] 	:= BOOL_TO_BYTE(GVL_IO.PI_YMtrSwitchJogInch);
+// Cap Insert 
+
+GVL_IO.OutputsForHMI[57] 	:= BOOL_TO_BYTE(GVL_IO.CP_YCapSlideExtend);
+GVL_IO.OutputsForHMI[58] 	:= BOOL_TO_BYTE(GVL_IO.CP_YCapSlideRetract);
+GVL_IO.OutputsForHMI[59] 	:= BOOL_TO_BYTE(GVL_IO.CP_YPalletHoldDownExtend);
+GVL_IO.OutputsForHMI[60] 	:= BOOL_TO_BYTE(GVL_IO.CP_YPalletHoldDownRetract);
+
+
+// Good Unload Outputs
+ 
+GVL_IO.OutputsForHMI[71] 	:= BOOL_TO_BYTE(GVL_IO.UL_1_YPalletHoldDownExtend_Home);
+GVL_IO.OutputsForHMI[72] 	:= BOOL_TO_BYTE(GVL_IO.UL_1_YPalletHoldDownRetract_Engage);
+GVL_IO.OutputsForHMI[73] 	:= BOOL_TO_BYTE(GVL_IO.UL_2_YPalletHoldDownExtend_Home);
+GVL_IO.OutputsForHMI[74] 	:= BOOL_TO_BYTE(GVL_IO.UL_2_YPalletHoldDownRetract_Engage);
+GVL_IO.OutputsForHMI[75] 	:= BOOL_TO_BYTE(GVL_IO.UL_3_YPalletHoldDownExtend_Home);
+GVL_IO.OutputsForHMI[76] 	:= BOOL_TO_BYTE(GVL_IO.UL_3_YPalletHoldDownRetract_Engage);
+GVL_IO.OutputsForHMI[77] 	:= BOOL_TO_BYTE(GVL_IO.UL_4_YPalletHoldDownExtend_Home);   
+GVL_IO.OutputsForHMI[78] 	:= BOOL_TO_BYTE(GVL_IO.UL_4_YPalletHoldDownRetract_Engage);
+
+GVL_IO.OutputsForHMI[79] 	:= BOOL_TO_BYTE(GVL_IO.UL_1_YRejectPushExtend);
+GVL_IO.OutputsForHMI[80] 	:= BOOL_TO_BYTE(GVL_IO.UL_2_YRejectPushExtend);
+GVL_IO.OutputsForHMI[81] 	:= BOOL_TO_BYTE(GVL_IO.UL_3_YRejectPushExtend);
+GVL_IO.OutputsForHMI[82] 	:= BOOL_TO_BYTE(GVL_IO.UL_4_YRejectPushExtend);
+
+GVL_IO.OutputsForHMI[83] 	:= BOOL_TO_BYTE(GVL_IO.UL_1_YRejectPushRetract);
+GVL_IO.OutputsForHMI[84] 	:= BOOL_TO_BYTE(GVL_IO.UL_2_YRejectPushRetract);
+GVL_IO.OutputsForHMI[85] 	:= BOOL_TO_BYTE(GVL_IO.UL_3_YRejectPushRetract);
+GVL_IO.OutputsForHMI[86] 	:= BOOL_TO_BYTE(GVL_IO.UL_4_YRejectPushRetract);
+
+
+
+
+// Auto Bagger 
+GVL_IO.OutputsForHMI[91] 	:= 	BOOL_TO_BYTE(GVL_IO.BG_YFillerTrigger);
+GVL_IO.OutputsForHMI[92] 	:= 	BOOL_TO_BYTE(GVL_IO.BG_YCloseChute1);
+GVL_IO.OutputsForHMI[93] 	:= 	BOOL_TO_BYTE(GVL_IO.BG_YOpenChute1);
+GVL_IO.OutputsForHMI[94] 	:= 	BOOL_TO_BYTE(GVL_IO.BG_YCloseChute2);
+GVL_IO.OutputsForHMI[95] 	:= 	BOOL_TO_BYTE(GVL_IO.BG_YOpenChute2);
+GVL_IO.OutputsForHMI[96] 	:= 	BOOL_TO_BYTE(GVL_IO.BG_YCloseChute3);
+GVL_IO.OutputsForHMI[97] 	:= 	BOOL_TO_BYTE(GVL_IO.BG_YOpenChute3);
+GVL_IO.OutputsForHMI[98] 	:= 	BOOL_TO_BYTE(GVL_IO.BG_YCloseChute4);
+GVL_IO.OutputsForHMI[99] 	:= 	BOOL_TO_BYTE(GVL_IO.BG_YOpenChute4);
+
+
+
+// Reject Unload
+GVL_IO.OutputsForHMI[101] 	:= BOOL_TO_BYTE(GVL_IO.RJ_YRejectPushExtend);
+GVL_IO.OutputsForHMI[102] 	:= BOOL_TO_BYTE(GVL_IO.RJ_YRejectPushRetract);
+//GVL_IO.OutputsForHMI[103] 	:= BOOL_TO_BYTE(GVL_IO.RJ_YPalletReleaseExtend);
+//GVL_IO.OutputsForHMI[104] 	:= BOOL_TO_BYTE(GVL_IO.RJ_YPalletReleaseRetract);
+GVL_IO.OutputsForHMI[105] 	:= BOOL_TO_BYTE(GVL_IO.RJ_YPalletHoldDownExtend_Home);
+GVL_IO.OutputsForHMI[106] 	:= BOOL_TO_BYTE(GVL_IO.RJ_YPalletHoldDownRetract_Engage);
+
+// Main Control System
+
+GVL_IO.OutputsForHMI[111] 	:= BOOL_TO_BYTE(GVL_IO.MC_YStackLightYellow);
+GVL_IO.OutputsForHMI[112] 	:= BOOL_TO_BYTE(GVL_IO.MC_YStackLightRed);
+GVL_IO.OutputsForHMI[113] 	:= BOOL_TO_BYTE(GVL_IO.MC_YStackLightGreen);
+
+
+
+// Prime Mover 
+GVL_IO.OutputsForHMI[121] 	:= BOOL_TO_BYTE(GVL_IO.MM_YEnableMagneMotion);
+
+
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="PrepareOutputsDataStructureForHMI">
+      <LineId Id="342" Count="113" />
+      <LineId Id="463" Count="0" />
+      <LineId Id="456" Count="6" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

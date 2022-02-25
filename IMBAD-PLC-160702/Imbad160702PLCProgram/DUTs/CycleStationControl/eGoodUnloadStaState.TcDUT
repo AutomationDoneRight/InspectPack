@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="eGoodUnloadStaState" Id="{cfb8c82f-fb4b-48dc-8f5a-02eb8e1c741f}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE eGoodUnloadStaState :
+( 
+	eUnknown,
+    eInit,
+	eHoming,
+	eReady,
+	eDwell,
+	eProcessing,
+	eDepart,
+    eError
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

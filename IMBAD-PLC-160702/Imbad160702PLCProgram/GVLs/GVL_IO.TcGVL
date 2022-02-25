@@ -1,0 +1,521 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <GVL Name="GVL_IO" Id="{24a01cc0-5149-4d45-b1b9-5e5d8304482c}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+	
+(* INPUTS *)
+
+
+    //Bagger Inputs 
+    BG_XBaggerBusy      		AT %I* : BOOL;  //Bagger Ready Input --- > need to remove this 
+	BG_XBagsLow         		AT %I* : BOOL;  //Bags Low
+	BG_XBaggerOKNoFault 		AT %I* : BOOL;  //Bagger Not Faulted
+	BG_XBaggerReadyForFiller 	AT %I* : BOOL;  //Bagger Ready For Filler
+	BG_XBaggerWaitingForLabel 	AT %I* : BOOL;  //Bagger Waiting For Label
+	
+	BG_XChute1Open AT %I* : BOOL;
+	BG_XChute2Open AT %I* : BOOL;
+	BG_XChute3Open AT %I* : BOOL;
+	BG_XChute4Open AT %I* : BOOL;
+	BG_XChute1Closed AT %I* : BOOL;
+	BG_XChute2Closed AT %I* : BOOL;
+	BG_XChute3Closed AT %I* : BOOL;
+	BG_XChute4Closed AT %I* : BOOL;
+	
+	
+	
+ 	// Burn Off Inputs
+	BU_XAlarm AT %I* : BOOL; //Burn Off Alarm
+	BU_Temperature AT %I* :INT; // Burn off Thermocouple
+	
+	//Cap Insert Inputs
+	CP_XPalletHoldDownHome AT %I* : BOOL; // Cap Pallet Hold Down Home
+	CP_XPalletHoldDownExtended AT %I* : BOOL; // Cap Pallet HoldDown Extended
+	CP_XCapSlideRetracted AT %I* : BOOL; // Cap Slide Retracted Sensor
+	CP_XCapSlideExtended AT %I* : BOOL; // CapSlide Extended Sensor
+	
+	//Good Unload Inputs
+	UL_XGrippersOpened AT %I* : BOOL; //Good Unload Grippers Opened
+	UL_XGrippersClosed AT %I* : BOOL; //Good Unload Grippers Closed
+//	UL_XPalletReleaseHome AT %I* : BOOL; // Pallet Release Retracted 
+//	UL_XPalletReleaseExtended AT %I* : BOOL; // Pallet Release Extended
+	UL_XRotatorCWBarrelLeftBin AT %I* : BOOL; // Rotator to Left Bin
+	UL_XRotatorCWBarrelRightBin AT %I* : BOOL; //Rotator to Right Bin 
+	UL_XRotatorCenter AT %I* : BOOL; // Rotator Center Position
+	
+	UL_XBarrelPresent AT %I* : BOOL; //UL Barrel Present
+	UL_XPalletHoldDownRetracted_Engaged AT %I* : BOOL; // Unload Pallet Hold Down Home
+	UL_XPalletHoldDownExtended_Home AT %I* : BOOL; // Unload Pallet HoldDown Extended
+	
+	UL_1_XBarrelPresent AT %I* : BOOL; //UL Barrel Present
+	UL_1_XPalletHoldDownRetracted_Engaged AT %I* : BOOL; // Unload Pallet Hold Down Home
+	UL_1_XPalletHoldDownExtended_Home AT %I* : BOOL; // Unload Pallet HoldDown Extended
+	UL_2_XBarrelPresent AT %I* : BOOL; //UL Barrel Present
+	UL_2_XPalletHoldDownRetracted_Engaged AT %I* : BOOL; // Unload Pallet Hold Down Home
+	UL_2_XPalletHoldDownExtended_Home AT %I* : BOOL; // Unload Pallet HoldDown Extended
+	UL_3_XBarrelPresent AT %I* : BOOL; //UL Barrel Present
+	UL_3_XPalletHoldDownRetracted_Engaged AT %I* : BOOL; // Unload Pallet Hold Down Home
+	UL_3_XPalletHoldDownExtended_Home AT %I* : BOOL; // Unload Pallet HoldDown Extended
+	UL_4_XBarrelPresent AT %I* : BOOL; //UL Barrel Present
+	UL_4_XPalletHoldDownRetracted_Engaged AT %I* : BOOL; // Unload Pallet Hold Down Home
+	UL_4_XPalletHoldDownExtended_Home AT %I* : BOOL; // Unload Pallet HoldDown Extended
+	
+	UL_XPP_DriveEnabled 	: 	BOOL; // Drive Enabled or not
+	UL_XPP_StopActive		:	BOOL; // Is Stop Active
+	UL_XPP_ReferenceOK		:	BOOL; // Is reference (home) OK? Without this, sequence will not execute
+	UL_XPP_ReadyToStart		:	BOOL; // Is Drive Ready to Start
+	UL_XPP_InPos			: 	BOOL; // Last Move in Pos
+	UL_XPP_Alarm			: 	BOOL; // Alarm in Drive 
+	UL_XPP_A1OUT			:	BOOL; // Out A1 from Sequence
+	UL_XPP_A2OUT			:	BOOL; // Out A2 from Sequence
+	UL_XPP_A3OUT			:	BOOL; // Out A3 from Sequence
+	UL_XPP_ReqLubeON		:	BOOL; // Connect this to the Lube Valve
+	UL_XPP_LubeLevel		:	BOOL; // PP is mirroring lube level 
+	
+	
+	UL_XPP_Byte4 AT %I*		: BYTE;
+	UL_XPP_Byte5 AT %I*		: BYTE;
+	// Inonizer Inputs
+	IZ_XIonAlarm AT %I* : BOOL; //Ionizer Alarm
+	IZ_XConditionAlarm AT %I* : BOOL; //Condition Alarm
+	IZ_XAlarm AT %I* : BOOL; //Alarm
+	
+	// Load Position Inputs
+	LD_XPalletHoldRetractEngage AT %I* : BOOL;  //Load Pallet HoldDown Home
+	LD_XPalletHoldDownExtendHome AT %I* : BOOL;  // Load Pallet HoldDown Extended
+	LD_XPalletReleaseHome AT %I* : BOOL;  //Load Pallet Release Retracted
+	LD_XPalletReleaseExtended AT %I* : BOOL;  //Load PalletRelease Extended
+	LD_XPalletCloseRetracted_1_2 AT %I* : BOOL; //Load Pallet Release Retract
+	LD_XPalletCloseExtended_1_2 AT %I*: BOOL; //Load PalletRelease Extended
+	LD_XPalletCloseRetracted_3_4 AT %I* : BOOL; //Load Pallet Release Retract
+	LD_XPalletCloseExtended_3_4 AT %I*: BOOL; //Load PalletRelease Extended
+	
+	
+	
+	// Main Control System 
+	
+	MC_XAirPressureOK AT %I* : BOOL; //Air Pressure OK
+	MC_XStartPB AT %I* : BOOL;  // Start PB
+	MC_XStopPB AT %I* : BOOL;  //Stop PB	
+	//MC_NotEStopped AT %I* : BOOL; // Output from switched 24V. D.C. (TRUE := NO E-STOP, FALSE := E-STOPPED)
+	MC_NotEStopped AT %I* : BOOL; // Output from switched 24V. D.C. (TRUE := NO E-STOP, FALSE := E-STOPPED)
+	MachineEStopped : BOOL;
+	
+    //Piston Insert 
+	
+	PI_XPalletHoldDownHome AT %I* : BOOL;  // Piston Pallet Hold Down Retracted 
+	PI_XPalletHoldDownExtended AT %I* : BOOL; //Piston Pallet Hold Down Extended
+	PI_XPistonPresentEscapement AT %I* : BOOL;  //Part Present in Escapement
+	PI_XEscapementAtInsertLoc AT %I* : BOOL;  //Escapement at Insert Location
+	PI_XEscapementAtBowl AT %I* : BOOL;  //Escapement is at Bowl Location
+	PI_XToolAt55_10_Barrel AT %I* : BOOL;  //Tool is at 55 cc Location
+	PI_XToolAt3_30_Barrel AT %I* : BOOL;  //Tool is at 3 and 30 cc Location
+	PI_XBarrelHoldDownHome AT %I* : BOOL;  //Barrel Hold Down at Home Location
+	PI_XBarrelHoldDownExtended AT %I* : BOOL;  //Barrel Hold Down at Part
+	
+	PI_XMtrOUT0 : BOOL; // Out 0 From SMC LEY JXC91 Ethernet IP Controller
+	PI_XMtrOUT1 : BOOL; // Out 1 From SMC LEY JXC91 Ethernet IP Controller
+	PI_XMtrOUT2 : BOOL; // Out 2 From SMC LEY JXC91 Ethernet IP Controller
+	PI_XMtrOUT3 : BOOL; // Out 3 From SMC LEY JXC91 Ethernet IP Controller
+	PI_XMtrOUT4 : BOOL; // Out 4 From SMC LEY JXC91 Ethernet IP Controller
+	PI_XMtrOUT5 : BOOL; // Out 5 From SMC LEY JXC91 Ethernet IP Controller
+	PI_XMtrBusy : BOOL; // Piston Insert Stepper Busy
+	PI_XMtrServoEnabled : BOOL; // Pistion Stepper Enabled
+	PI_XMtrServoHomed : BOOL; //Piston Stepper Homed
+	PI_XMtrMoveCompl: BOOL; //Piston Stepper Move complete
+	PI_XMtrEStopped : BOOL; //Piston Motor E-Stopped
+	PI_XMtrAlarm : BOOL; // Piston Motor Alarm
+	PI_XMtrReady : BOOL; // Pistom Motor Ready Bit from SMC LEY JXCP1 EIP
+	
+	PI_XMtrCurrPos : REAL;
+	
+	// Reject Unload 
+	
+	RJ_XRejectCylinderHome AT %I* : BOOL;  //Reject Cyclinder at home location
+	RJ_XRejectCylinderExtended AT %I* : BOOL;  //Reject Cylinder extended location
+//	RJ_XPalletReleaseHome AT %I* : BOOL;  // Reject Pallet Release Home
+//	RJ_XPalletReleaseExtended AT %I* : BOOL;  //Reject Pallet Release Extended 
+	RJ_XPartPresent AT %I* : BOOL; //Reject Part Present Sensor PhotoEye
+	RJ_XPalletHoldDownExtended_Home AT %I* : BOOL; // Reject Pallet Horizontal Locater Extended
+	RJ_XPalletHoldDownRetracted_Engaged AT %I* : BOOL; // Reject Pallet Horizontal Locater Retracted
+	
+	//Yushin Robot Interface Inputs
+	YU_XPrepareToLoad AT %I* : BOOL;  //Prepare Track to Load Parts
+	YU_XToolUp AT %I* : BOOL;  //Tool is up, clear to move
+	YU_XToolDown AT %I* : BOOL;  //Tool is down, parts are transferred
+	YU_XLocBit0 AT %I* : BOOL;  //Location Bit 0 
+	YU_XLocBit1 AT %I* : BOOL; //Location Bit 1 
+	
+	
+	//Vision
+	VS_XToolingLocationUpper AT %I* : BOOL;  //Vision Tooling sensor location at upper height
+	VS_XToolingLocationLower AT %I* : BOOL; // Vision Tooling sensor location at lower height 
+	VS_XCmdCmpl : BOOL; // Turns ON when command processing is complete
+	VS_XCmdErr  : BOOL; // Turns OFF when command processing is successful and turns ON when it fails
+	VS_XCmdReady : BOOL; // Turns ON when command processes can be received
+	VS_XCmdResult : BYTE;
+	VS_XCmdData1 : BYTE;
+	VS_XCmdData2 : BYTE;
+	VS_XResultReady : BOOL; // Turns ON when data processing is complete
+	VS_XResultOR : BOOL; // Used to output the OR result for the judged value of the tools specified in the output settings
+	VS_XReady1 : BOOL; // Signals the Trigger 1 is acceptable
+	VS_XReady2 : BOOL; // Signals the Trigger 2 is acceptable
+	VS_XReady3 : BOOL; // Signals the Trigger 3 is acceptable
+	VS_XReady4 : BOOL; // Signals the Trigger 4 is acceptable
+	VS_XAck1 : BOOL; // Turns ON when Trigger 1 is accepted. Turns OFF when Trigger 1 is set to OFF
+	VS_XAck2 : BOOL; // Turns ON when Trigger 1 is accepted. Turns OFF when Trigger 1 is set to OFF
+	VS_xAck3 : BOOL; // Turns ON when Trigger 1 is accepted. Turns OFF when Trigger 1 is set to OFF
+	VS_XAck4 : BOOL; // Turns ON when Trigger 1 is accepted. Turns OFF when Trigger 1 is set to OFF
+	VS_XBusy : BOOL; // When Command Processing or Image Processing
+	VS_XError : BOOL; // Any system errors
+    VS_XRun  : BOOL; // When in Run Mode
+	VS_XAllCamJudgeVal: BOOL; //All Camera Judgement Values
+	VS_XCam1JudgeVal: BOOL; // Camera 1 Judgement Value...set this up in the Judgement top level selection in the output config at the Keyence controller
+	VS_XCam2JudgeVal: BOOL; // Camera 2 Judgement Value...set this up in the Judgement top level selection in the output config at the Keyence controller
+	VS_XCam3JudgeVal: BOOL; // Camera 3 Judgement Value...set this up in the Judgement top level selection in the output config at the Keyence controller
+	VS_XCam4JudgeVal: BOOL; // Camera 4 Judgement Value .. set this up in the Judgement top level selection in the output config at the Keyence controller
+	VS_XPartEmpty : BOOL;  // Will be 1 when empty and 0 wehn present 0:4
+	VS_XPartPresentBeforeVision  AT %I* : BOOL; // New Part Present Sensor before Vision Station
+	
+	//Short Shot
+    VS_XMaxIndividualStainArea  : REAL;
+	VS_XMinIndividualStainArea	: REAL;
+	VS_XModifiedStainArea		: REAL;
+	VS_XModifiedMaxStain        : REAL;
+	VS_XXPosCam1				: REAL;
+	VS_XYPosCam1		 		: REAL;
+	//Stain
+	VS_XUpperFlawAreaCam2	 	: DINT;
+	VS_XLowerFlawAreaCam2	 	: DINT;
+	VS_XUpperFlawCountCam2	 	: DINT;
+	VS_XLowerFlawCountCam2	 	: DINT;
+	VS_XXPosAdjustCam2		 	: REAL;
+	VS_XUpperFlawAreaCam3	 	: DINT;
+	VS_XLowerFlawAreaCam3	 	: DINT;
+	VS_XUpperFlawCountCam3	 	: DINT;
+	VS_XLowerFlawCountCam3	 	: DINT;
+	VS_XXPosAdjustCam3		 	: REAL;
+	VS_XUpperFlawAreaCam4	 	: DINT;
+	VS_XLowerFlawAreaCam4	 	: DINT;
+	VS_XUpperFlawCountCam4	 	: DINT;
+	VS_XLowerFlawCountCam4	 	: DINT;
+	VS_XXPosAdjustCam4		 	: REAL;
+	
+	
+	VS_XByte0 AT %I* : BYTE; // Vision Byte 0
+	VS_XByte1 AT %I* : BYTE; // Vision Byte 1
+	VS_XByte2 AT %I* : BYTE; // Vision Byte 2
+	VS_XByte3 AT %I* : BYTE; // Vision Byte 3
+	VS_XByte4 AT %I* : BYTE; // Vision Byte 4
+
+	VS_XByte20 AT %I* : BYTE; //Vision Byte 20
+	VS_XByte24 AT %I* : BYTE; //Vision Byte 24
+	VS_XByte28 AT %I* : BYTE; //Vision Byte 28
+	
+	VS_XByte48 AT %I* : BYTE; //Vision Byte 48
+	VS_XByte49 AT %I* : BYTE; //Vision Byte 48
+	VS_XByte50 AT %I* : BYTE; //Vision Byte 48
+	VS_XByte51 AT %I* : BYTE; //Vision Byte 48
+	
+	VS_XByte52 AT %I* : BYTE; //Vision Byte 52
+	VS_XByte53 AT %I* : BYTE; //Vision Byte 53
+	VS_XByte54 AT %I* : BYTE; //Vision Byte 54
+	VS_XByte55 AT %I* : BYTE; //Vision Byte 55
+	
+	VS_XByte56 AT %I* : BYTE; //Vision Byte 56
+	VS_XByte57 AT %I* : BYTE; //Vision Byte 57
+	VS_XByte58 AT %I* : BYTE; //Vision Byte 58
+	VS_XByte59 AT %I* : BYTE; //Vision Byte 59
+	
+	VS_XByte60 AT %I* : BYTE; //Vision Byte 60
+	VS_XByte61 AT %I* : BYTE; //Vision Byte 61
+	VS_XByte62 AT %I* : BYTE; //Vision Byte 62
+	VS_XByte63 AT %I* : BYTE; //Vision Byte 63
+	
+	VS_XByte64 AT %I* : BYTE; //Vision Byte 64
+	VS_XByte65 AT %I* : BYTE; //Vision Byte 65
+	VS_XByte66 AT %I* : BYTE; //Vision Byte 66
+	VS_XByte67 AT %I* : BYTE; //Vision Byte 67
+	
+	VS_XByte68 AT %I* : BYTE; //Vision Byte 68
+	VS_XByte69 AT %I* : BYTE; //Vision Byte 69
+	VS_XByte70 AT %I* : BYTE; //Vision Byte 70
+	VS_XByte71 AT %I* : BYTE; //Vision Byte 71
+	                                          
+	VS_XByte72 AT %I* : BYTE; //Vision Byte 72
+	VS_XByte73 AT %I* : BYTE; //Vision Byte 73
+	VS_XByte74 AT %I* : BYTE; //Vision Byte 74
+	VS_XByte75 AT %I* : BYTE; //Vision Byte 75
+	                                          
+	VS_XByte76 AT %I* : BYTE; //Vision Byte 76
+	VS_XByte77 AT %I* : BYTE; //Vision Byte 77
+	VS_XByte78 AT %I* : BYTE; //Vision Byte 78
+	VS_XByte79 AT %I* : BYTE; //Vision Byte 79
+	                                          
+	VS_XByte80 AT %I* : BYTE; //Vision Byte 80
+	VS_XByte81 AT %I* : BYTE; //Vision Byte 81
+	VS_XByte82 AT %I* : BYTE; //Vision Byte 82
+	VS_XByte83 AT %I* : BYTE; //Vision Byte 83
+	
+	VS_XByte88 AT %I* : BYTE; //Vision Byte 88 
+	VS_XByte89 AT %I* : BYTE; //Vision Byte 89 
+	VS_XByte90 AT %I* : BYTE; //Vision Byte 90 
+	VS_XByte91 AT %I* : BYTE; //Vision Byte 91 
+	                                           
+	VS_XByte92 AT %I* : BYTE; //Vision Byte 92 
+	VS_XByte93 AT %I* : BYTE; //Vision Byte 93 
+	VS_XByte94 AT %I* : BYTE; //Vision Byte 94 
+	VS_XByte95 AT %I* : BYTE; //Vision Byte 95 
+	                                           
+	VS_XByte96 AT %I* : BYTE; //Vision Byte 96 
+	VS_XByte97 AT %I* : BYTE; //Vision Byte 97 
+	VS_XByte98 AT %I* : BYTE; //Vision Byte 98 
+	VS_XByte99 AT %I* : BYTE; //Vision Byte 99 
+	                                           
+	VS_XByte100 AT %I* : BYTE; //Vision Byte 100
+	VS_XByte101 AT %I* : BYTE; //Vision Byte 101
+	VS_XByte102 AT %I* : BYTE; //Vision Byte 102
+	VS_XByte103 AT %I* : BYTE; //Vision Byte 103
+
+	VS_XByte108 AT %I* : BYTE; //Vision Byte 108 
+	VS_XByte109 AT %I* : BYTE; //Vision Byte 109 
+	VS_XByte110 AT %I* : BYTE; //Vision Byte 110 
+	VS_XByte111 AT %I* : BYTE; //Vision Byte 111 
+	                                             
+	VS_XByte112 AT %I* : BYTE; //Vision Byte 112 
+	VS_XByte113 AT %I* : BYTE; //Vision Byte 113 
+	VS_XByte114 AT %I* : BYTE; //Vision Byte 114 
+	VS_XByte115 AT %I* : BYTE; //Vision Byte 115 
+	                                             
+	VS_XByte116 AT %I* : BYTE; //Vision Byte 116 
+	VS_XByte117 AT %I* : BYTE; //Vision Byte 117 
+	VS_XByte118 AT %I* : BYTE; //Vision Byte 118 
+	VS_XByte119 AT %I* : BYTE; //Vision Byte 119 
+	                                             
+	VS_XByte120 AT %I* : BYTE; //Vision Byte 120 
+	VS_XByte121 AT %I* : BYTE; //Vision Byte 121 
+	VS_XByte122 AT %I* : BYTE; //Vision Byte 122 
+	VS_XByte123 AT %I* : BYTE; //Vision Byte 123                                         
+	
+	
+	
+      
+	
+(* OUTPUTS *)
+
+	
+	//Bagger Outputs
+  	BG_YFillerTrigger AT %Q* : BOOL;   //Feeder Ready Ouput, also called Filler Trigger in Sharp Docs
+	BG_YOpenChute1 AT %Q* : BOOL;
+	BG_YOpenChute2 AT %Q* : BOOL;
+	BG_YOpenChute3 AT %Q* : BOOL;
+	BG_YOpenChute4 AT %Q* : BOOL;
+	BG_YCloseChute1 AT %Q* : BOOL;
+	BG_YCloseChute2 AT %Q* : BOOL;
+	BG_YCloseChute3 AT %Q* : BOOL;
+	BG_YCloseChute4 AT %Q* : BOOL;
+	
+	//Burn Off Outputs
+	BU_HeatCntl AT %Q* :INT; // Burn off Heater
+	BU_BlowCntl AT %Q* :INT; // Burn off Heater
+	
+	//Cap Insert Outputs
+	(*
+	CP_YSMAC0 AT %Q* : BOOL; //SMAC Output 1
+	CP_YSMAC1 AT %Q* : BOOL; // SMAC Output 2
+	CP_YSMAC2 AT %Q* : BOOL; // SMAC Output 2
+	CP_YSMAC3 AT %Q* : BOOL; // SMAC Output 2	
+	CP_YEscapeWallCylinderExtend : BOOL; //Cap Escapement Wall Extended
+	CP_YEscapeWallCylinderRetract : BOOL; // Cap Escapement Wall Retracted
+	CP_YEscapementToPick : BOOL; //Cap Escapement to Pickup location
+	CP_YEscapementToBowl : BOOL; //Cap Escapement to Bowl Location
+
+	CP_YToolVacuumON AT %Q*: BOOL; //Vacuum ON
+	CP_YToolVacuumOFF AT %Q*: BOOL; //Vacuum OFF
+	CP_YBarellCenterPinExtend : BOOL; // Cap Barrel Center Pin Extend/Raise to center the barrel
+	CP_YBarellCenterPinRetract : BOOL; // Cap Barrel Center Pin Lower to center the barrel
+	*)
+	CP_YCapSlideExtend : BOOL;  //Cap Slide Extend and Torque
+    CP_YCapSlideRetract : BOOL; //Cap Slide Retract 
+	CP_YPalletHoldDownExtend: BOOL; //Cap Hold Down pallet
+	CP_YPalletHoldDownRetract : BOOL; //Cap Retract Pallet Hold down	
+	
+	//Good Unload Outputs
+	
+	UL_YGrippersOpen : BOOL; //Good Unload Open Grippers
+	UL_YGrippersClose: BOOL; // Good Unload Close Grippers
+	UL_YRotatorCCWBarrelRightBin : BOOL; //Rotate Gripper to Right Bin
+	UL_YRotatorCWBarrelLeftBin: BOOL;
+//	UL_YPalletReleaseExtend: BOOL; 
+//	UL_YPalletReleaseRetract : BOOL;
+    UL_YPalletHoldDownExtend_Home : BOOL;
+    UL_YPalletHoldDownRetract_Engage : BOOL;
+	
+	UL_1_YPalletHoldDownExtend_Home : BOOL;
+    UL_1_YPalletHoldDownRetract_Engage : BOOL;
+	UL_1_YRejectPushExtend  : BOOL; 
+	UL_1_YRejectPushRetract : BOOL; 
+	
+	UL_2_YPalletHoldDownExtend_Home : BOOL;
+    UL_2_YPalletHoldDownRetract_Engage : BOOL;
+	UL_2_YRejectPushExtend  : BOOL; 
+	UL_2_YRejectPushRetract : BOOL; 
+	
+	UL_3_YPalletHoldDownExtend_Home : BOOL;
+    UL_3_YPalletHoldDownRetract_Engage : BOOL;
+	UL_3_YRejectPushExtend  : BOOL; 
+	UL_3_YRejectPushRetract : BOOL; 
+	
+	UL_4_YPalletHoldDownExtend_Home : BOOL;
+    UL_4_YPalletHoldDownRetract_Engage : BOOL;
+	UL_4_YRejectPushExtend  : BOOL; 
+	UL_4_YRejectPushRetract : BOOL; 
+	
+	
+	UL_YPP_Enable		:	BOOL;
+	UL_YPP_Stop			:	BOOL;
+	UL_YPP_ResetAlarm	:	BOOL;
+	UL_YPP_StartHoming	:	BOOL;
+	UL_YPP_StartSeq		:	BOOL;
+	UL_YPP_BitA			:	BOOL;
+	UL_YPP_BitB			:	BOOL;
+	UL_YPP_BitC			:	BOOL;
+	
+	UL_YPP_Byte4   AT %Q* : BYTE;
+					
+	
+	
+	
+	//Ionizer Outputs
+	
+	IZ_YInterrupt AT %Q* : BOOL; // Interrupt Ionizer Output
+	//IZ_YIonizerAirON : BOOL;
+	//IZ_YIonizerAirOFF : BOOL;
+	
+	//Load Position Outputs
+	LD_YPalletHoldDownExtendHome : BOOL; //Load Pallet Hold Down Extend
+	LD_YPalletHoldDownRetractEngage : BOOL; //Load Pallet Hold Down Retract
+	LD_YPalletReleaseExtend :BOOL; //Load Pallet Center Pin Extend
+	LD_YPalletReleaseRetract : BOOL; //Load Pallet Center Pin Retract
+	LD_YPalletCloseExtend :BOOL; //Load PalletRelease Extend
+	LD_YPalletCloseRetract : BOOL; //Load Pallet Release Retract
+	
+	//Main Control System
+	
+	MC_YStackLightYellow AT %Q* : BOOL;  // Yellow Stack Light
+	MC_YStackLightRed AT %Q* :  BOOL; //Red Stack Light
+	MC_YStackLightGreen AT %Q* : BOOL; //Green Stack Light
+	
+	// Vision
+	
+	VS_YBarrelLED : BOOL; //Vison LED for Barrel Advanced Illumination
+	VS_YBarrelLED_off AT %Q* : BOOL; //Vison LED for Barrel Advanced Illumination
+	VS_YCmdRequest : BOOL; // Provides command execution when signal switches from OFF to ON
+	VS_YResultAck : BOOL; // Provides notification of data acquisition when signal swtiches from OFF to ON
+	VS_YErrorReset : BOOL; // Clears Error when signal switches from OFF to ON
+	VS_YTrigger1 : BOOL; // Trigger Camera 1, note Ready 1 must be ON prior to issuing trigger
+	VS_YTrigger2 : BOOL; // Trigger Camera 2, note Ready 2 must be ON prior to issuing trigger
+	VS_YTrigger3 : BOOL; // Trigger Camera 3, note Ready 3 must be ON prior to issuing trigger
+	VS_YTrigger4 : BOOL; // Trigger Camera 4, note Ready 4 must be ON prior to issuing trigger
+	VS_YCmdNumber : BYTE; // This maps into DWORD, but let's limit to BYTE
+	VS_YCmdParam1 : BYTE; // This maps into DWORD, but let's limit to BYTE
+	VS_YCmdParam2 : BYTE; // This maps into DWORD, but let's limit to BYTE
+	VS_YCmdParam3 : BYTE; // This maps into DWORD, but let's limit to BYTE
+	
+	VS_YByte0 AT %Q* : BYTE;  //contains utility bits including Command Request
+	VS_YByte1 AT %Q* : BYTE;  
+	VS_YByte2 AT %Q* : BYTE;
+    VS_YByte16 AT %Q* : BYTE;  //Command Number
+    VS_YByte20 AT %Q* : BYTE;  //Command Parameter 1
+    VS_YByte24 AT %Q* : BYTE;  //Param 2
+
+  	
+	//Piston Insert 
+	
+	PI_YPalletHoldDownExtend : BOOL; // Piston Pallet Hold Down
+	PI_YPalletHoldDownRetract : BOOL; // Piston Pallet Hold Down Release
+	PI_YEscapementToBowl : BOOL; //Piston Move Escapement to Bowl
+	PI_YEscapementToWork : BOOL; //Piston Move to Work Location
+	PI_YBarrelBackupExtend :BOOL; //Piston Barrel Backup
+	PI_YBarrelBackupRetract : BOOL; //Piston Barrel Retract 
+	PI_YPistonBowlON: BOOL; // Piston Bowl
+	PI_YPistonBowlOFF: BOOL; // Piston Bowl
+	
+	
+	PI_YMtrStepSelectIN0 : BOOL; // INO of SMC JXC91 EtherNet/IP Controller
+	PI_YMtrStepSelectIN1 : BOOL; // INO of SMC JXC91 EtherNet/IP Controller
+	PI_YMtrStepSelectIN2 : BOOL; // INO of SMC JXC91 EtherNet/IP Controller
+	PI_YMtrStepSelectIN3 : BOOL; // INO of SMC JXC91 EtherNet/IP Controller
+	PI_YMtrStepSelectIN4 : BOOL; // INO of SMC JXC91 EtherNet/IP Controller
+	PI_YMtrStepSelectIN5 : BOOL; // INO of SMC JXC91 EtherNet/IP Controller
+	
+	PI_YMtrHoldMove : BOOL; // Hold Move of SMC JXC91 EtherNet/IP Controller
+	PI_YMtrSetEnable : BOOL; // Enable Stepper Motor
+	PI_YMtrDriveStepTrigger : BOOL;  //Trigger Stepper Drive
+	PI_YMtrReset : BOOL; // Reset Stepper Motor
+	PI_YMtrGoHome : BOOL; // Home Stepper Motor
+	PI_YMtrJogPos : BOOL; // Jog Stepper Motor Pos
+	PI_YMtrJogNeg : BOOL;  // Jog Stepper Motor Neg
+	PI_YMtrSwitchJogInch : BOOL; // Switch Between Inch and Jog Mode
+
+	
+	//Prime Mover
+	MM_YEnableMagneMotion AT %Q*: BOOL; //New INewnable Magnemotion - this can be tied to safety relay 
+	
+	//Reject Unload 
+	RJ_YRejectPushExtend  : BOOL; 
+	RJ_YRejectPushRetract : BOOL; 
+//	RJ_YPalletReleaseExtend : BOOL; //Release Pallet extend
+//	RJ_YPalletReleaseRetract : BOOL;  //Release Pallet retracted 
+	RJ_YPalletHoldDownExtend_Home : BOOL; //Reject Pallet Locater / Holder coming in horizontally Extend/Engage
+	RJ_YPalletHoldDownRetract_Engage : BOOL; //Reject Pallet Locater / Holder coming in horizontally Retract/Disengage
+	
+	//Yushin Robot Interface Outputs
+	YU_YOkToLoad AT %Q* : BOOL; //Signal to Yushin OK to Load 
+	YU_YAckPartsHeld AT %Q* : BOOL; //Signal that Parts are held
+	YU_YIMBADIsOK AT %Q* : BOOL; // Signal that IMABD IS RUNNING
+	
+	// FieldBus Outputs for instances where Outputs can't be linked directly via I/O linking utility 
+	// SMC Does not provide output bits for linking. Note that indexing is 0 based in the software, but Terminal Valve Numbers used in I/O List Document are 1 based indexing 
+    SMCEX260_1_Byte0 AT %Q* :BYTE; //
+	SMCEX260_1_Byte1 AT %Q* :BYTE; //
+	SMCEX260_1_Byte2 AT %Q* :BYTE; //
+	SMCEX260_1_Byte3 AT %Q* :BYTE; //
+    SMCEX260_2_Byte0 AT %Q* :BYTE; //
+	SMCEX260_2_Byte1 AT %Q* :BYTE; //
+	SMCEX260_2_Byte2 AT %Q* :BYTE; //
+	SMCEX260_2_Byte3 AT %Q* :BYTE; //
+	
+	SMC_LEY_YUINT0 AT %Q* : UINT;
+	//SMC_LEY_YByte0 AT %Q* : BYTE;
+	//SMC_LEY_YByte1 AT %Q* : BYTE;
+	
+	//SMC_LEY_YByte2 AT %Q* : BYTE;
+	//SMC_LEY_YByte3 AT %Q* : BYTE;
+	
+	SMC_LEY_XUINT0 AT %I* : UINT;
+	SMC_LEY_XUINT1 AT %I* : UINT;
+	SMC_LEY_XCurrMtrPos AT %I* : DINT;
+(*	
+	SMC_LEY_XByte0 AT %I* : BYTE;
+	SMC_LEY_XByte1 AT %I* : BYTE;
+	SMC_LEY_XByte2 AT %I* : BYTE;
+	SMC_LEY_XByte3 AT %I* : BYTE;
+	SMC_LEY_XByte4 AT %I* : BYTE;
+	SMC_LEY_XByte5 AT %I* : BYTE;
+	SMC_LEY_XByte6 AT %I* : BYTE;
+	SMC_LEY_XByte7 AT %I* : BYTE;
+*)	
+	InputsForHMI : ARRAY[1..128] OF BYTE;
+	OutputsForHMI :ARRAY[1..128] OF BYTE;
+	OutputsFromHMI: ARRAY[1..128] OF BYTE;
+	IOLockedFromHMI : BYTE;
+	ResumeMovementFromHMI: BYTE := 0;
+	
+	RxBufferEL			: ComBuffer;	(* Receive data buffer; used with all receive function blocks *)
+	TxBufferEL			: ComBuffer;	(* Transmit data buffer; used with all receive function blocks *)
+	
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

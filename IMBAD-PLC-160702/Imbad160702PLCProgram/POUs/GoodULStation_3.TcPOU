@@ -1,0 +1,486 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <POU Name="GoodULStation_3" Id="{e1e26e8d-7642-4ab7-b749-5dafc6a10f2f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC GoodULStation_3
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	xTrigger :BOOL := FALSE; // triggers processing
+	State : eGoodULNewStaState := eGoodULNewStaState.eUnknown;
+	NextState : eGoodULNewStaState := eGoodULNewStaState.eUnknown;
+	ErrorReturnState : eGoodULNewStaState := eGoodULNewStaState.eUnknown;
+	bFirst : BOOL := TRUE;
+	VUT : BYTE; //VehicleID Under Station
+	DwellTimer : TON;
+	StateTimer : TON;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF (GVL_IO.MachineEStopped) THEN 
+	State := eGoodULNewStaState.eUnknown;
+	NextState := eGoodULNewStaState.eUnknown;
+	Status.GoodUL_3_StatusMsg:= 'Good UL3 Sta Unknown, Check AIR, E-STOP and Hit Start';
+END_IF
+
+CASE State OF
+eGoodULNewStaState.eUnknown:
+	Status.GoodUL_3_StatusMsg:= 'Good UL3 Unknown, Check AIR, E-STOP and Hit Start';
+    IF (GVL_IO.MC_XStartPB AND GVL_IO.MC_XAirPressureOK AND GVL_IO.MC_NotEStopped) THEN // wait for start button when powered up or PLC program restarted
+		NextState := eGoodULNewStaState.eInit;	   
+	END_IF
+    
+
+eGoodULNewStaState.eInit:
+    Act_KnockPartOFF();
+	Act_FreePalletHoldDown();
+	ResetDwellTimer();
+	NextState := eGoodULNewStaState.eHoming;
+	
+
+eGoodULNewStaState.eHoming:
+	IF (IsPalletHoldDownFree()) THEN 
+         NextState := eGoodULNewStaState.eReady;
+	  END_IF
+     DwellTimer(IN:=TRUE, PT:= T#10S);
+     IF (DwellTimer.Q) THEN
+		 ResetDwellTimer();
+		 ErrorReturnState:= eGoodULNewStaState.eInit;
+		 NextState := eGoodULNewStaState.eError;		 
+	 END_IF	
+
+eGoodULNewStaState.eReady:
+	IF (xTrigger) THEN
+		IF (NOT LotsData.Lot.AutoBaggerEnabled) THEN 
+				Stations.fbRoutePlanner.P_GoodUnload_3_NextStaFlag := 5; 
+				NextState := eGoodULNewStaState.eSendPalletHoldDownExtend;	
+		ELSE
+				NextState := eGoodULNewStaState.eCheckChuteCount;	
+		END_IF	
+		ResetDwellTimer();
+	END_IF
+	
+	IF (NOT LotsData.Lot.GoodUnloadEnabled) THEN
+		NextState :=  eGoodULNewStaState.eDisabledReady;	
+	END_IF
+
+eGoodULNewStaState.eDisabledReady:
+
+	Act_KnockPartOFF();
+	Act_FreePalletHoldDown();
+	
+    IF (LotsData.Lot.GoodUnloadEnabled) THEN 
+		NextState := eGoodULNewStaState.eUnknown; // force the operator to hit the start button if station is enabled.
+	END_IF
+	
+    IF (xTrigger) THEN // vehicles that have been previously commanded to come here before station was disabled 
+		Stations.fbRoutePlanner.P_GoodUnload_3_NextStaFlag := 5; // send to reject after this process is complete
+		NextState := eGoodULNewStaState.eDepart;
+	END_IF
+	
+	Status.StationStauts[MM_CONST.GOOD_UL_3_STA_HMI_STATE] := OverallStationStatus.eDisabled;
+	Status.GoodUL_3_StatusMsg:= 'Good UL3 Disabled and Clear for pallets to move';	
+
+eGoodULNewStaState.eCheckChuteCount: 
+	IF ((Config.GoodCount1 < LotsData.Lot.QuantityInBag) AND (Config.GoodCount2 < (LotsData.Lot.QuantityInBag-10) OR Config.GoodCount2 = LotsData.Lot.QuantityInBag)) THEN
+			Stations.fbRoutePlanner.P_GoodUnload_3_NextStaFlag := 5; // send to reject after this process is complete
+			NextState := eGoodULNewStaState.eSendPalletHoldDownExtend;	
+            			
+	ELSE 	
+			Stations.fbRoutePlanner.P_GoodUnload_3_NextStaFlag := 4; // send to Good Unload Station 4
+			NextState := eGoodULNewStaState.eDepart;
+	END_IF
+	
+eGoodULNewStaState.eSendPalletHoldDownExtend:
+	Act_EngagePalletHoldDown();
+	ResetDwellTimer();
+	NextState := eGoodULNewStaState.eCheckPalletHoldDownExtended;
+	
+eGoodULNewStaState.eCheckPalletHoldDownExtended:
+   DwellTimer(IN:=TRUE, PT:= T#10S);	
+   IF (IsPalletHoldDownEngaged()) THEN
+        ResetDwellTimer();	   
+		IF(GVL_IO.UL_3_XBarrelPresent (*OR TRUE*)) THEN   /// enabled checking Part Present Sensor at Unload stations 051319 NAP
+			NextState := eGoodULNewStaState.eKnockOffPart;
+        ELSE
+			NextState := eGoodULNewStaState.ePalletHoldDownRelease;	
+		END_IF        
+   END_IF      
+   IF (DwellTimer.Q) THEN
+		 ResetDwellTimer();
+		 ErrorReturnState:= eGoodULNewStaState.eSendPalletHoldDownExtend;
+		 NextState := eGoodULNewStaState.eError;		 
+	END_IF
+  
+eGoodULNewStaState.eKnockoffPart:
+	Act_KnockPartON();
+	UpdateLotData();
+	UpdatePartData();
+	ResetDwellTimer();
+	StateTimer(IN:=FALSE);
+	NextState := eGoodULNewStaState.eCheckPartKnockedOff;
+
+eGoodULNewStaState.eCheckPartKnockedOff:
+   StateTimer(IN:=TRUE, PT:= T#200MS);
+   	IF (StateTimer.Q) THEN
+   //IF (NOT(GVL_IO.UL_3_XBarrelPresent) ) THEN   
+	   NextState := eGoodULNewStaState.ePalletHoldDownRelease;
+	   Config.GoodCount1 := Config.GoodCount1 + 1;
+	   DwellTimer(IN:=FALSE);
+	   StateTimer(IN:=FALSE);
+   END_IF
+   DwellTimer(IN:= TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eGoodULNewStaState.eCheckPartKnockedOff;
+	   Status.GoodUL_3_StatusMsg:= 'Good UL 3 Remove Part then Hit START';
+   	   NextState := eGoodULNewStaState.eError;	
+   END_IF   
+
+eGoodULNewStaState.ePalletHoldDownRelease:
+    Act_KnockPartOFF();
+	Act_FreePalletHoldDown();
+    ResetDwellTimer();	
+	NextState := eGoodULNewStaState.ePalletHoldDownReleased;
+
+eGoodULNewStaState.ePalletHoldDownReleased:	
+	IF (IsPalletHoldDownFree()) THEN         
+	    NextState := eGoodULNewStaState.eDepart;
+    END_IF
+	
+   DwellTimer(IN:= TRUE, PT:= T#10S);
+   IF (DwellTimer.Q) THEN
+	   ResetDwellTimer();
+	   ErrorReturnState:= eGoodULNewStaState.ePalletHoldDownRelease;	   
+   	   NextState := eGoodULNewStaState.eError;	
+   END_IF  
+	
+	
+eGoodULNewStaState.eDepart:
+    Stations.fbRoutePlanner.M_NotifyVehStaCmpl(StationIndex:= MM_CONST.GOOD_UL_3_STA, VehicleID := VUT);
+	xTrigger := FALSE;
+	IF (Stations.fbCycleControl.StopRequested) THEN
+		NextState := eGoodULNewStaState.eStopActive;
+	ELSE 
+		NextState := eGoodULNewStaState.eReady;
+    END_IF
+	
+eGoodULNewStaState.eStopActive:
+	IF (NOT Stations.fbCycleControl.StopRequested) THEN
+		NextState := eGoodULNewStaState.eInit;
+    END_IF
+	
+
+eGoodULNewStaState.eError:
+	IF (GVL_IO.MC_XStartPB) THEN
+		NextState := ErrorReturnState;
+		ErrorReturnState := eGoodULNewStaState.eUnknown;
+	END_IF
+
+END_CASE
+
+IF (State <> NextState) THEN
+	bFirst := TRUE;
+	StateTimer(IN:=FALSE);
+ELSE
+	bFirst := FALSE;
+END_IF
+
+State := NextState;
+AssignStationStatusForHMI();]]></ST>
+    </Implementation>
+    <Action Name="Act_EngagePalletHoldDown" Id="{0f3a560e-facc-424e-99da-4a8938e0c295}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_3_YPalletHoldDownExtend_Home  := FALSE;
+GVL_IO.UL_3_YPalletHoldDownRetract_Engage := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_FreePalletHoldDown" Id="{716bedcd-c773-4ea7-bb71-ed504dd605d0}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_3_YPalletHoldDownExtend_Home := TRUE;
+GVL_IO.UL_3_YPalletHoldDownRetract_Engage := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_KnockPartOFF" Id="{05c77f7b-f126-4fbd-96df-0def3b82c876}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_3_YRejectPushExtend := FALSE;
+GVL_IO.UL_3_YRejectPushRetract := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="Act_KnockPartON" Id="{2fec6f5d-e5c0-421c-8d1f-beaa3912e098}">
+      <Implementation>
+        <ST><![CDATA[GVL_IO.UL_3_YRejectPushExtend := TRUE;
+GVL_IO.UL_3_YRejectPushRetract := FALSE;]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="AssignStationStatusForHMI" Id="{12053c55-5ca1-4812-b638-4f9fa3312277}">
+      <Declaration><![CDATA[METHOD PUBLIC AssignStationStatusForHMI : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Status.StationsState[MM_CONST.GOOD_UL_3_STA_HMI_STATE] := State;
+IF (NOT LotsData.Lot.GoodUnloadEnabled) THEN
+	Status.StationStauts[MM_CONST.GOOD_UL_3_STA_HMI_STATE] := OverallStationStatus.eDisabled;
+ELSE 
+	CASE State OF 
+	
+	eGoodULNewStaState.eUnknown,eGoodULNewStaState.eError:
+		Status.StationStauts[MM_CONST.GOOD_UL_3_STA_HMI_STATE] := OverallStationStatus.eError;
+		
+    eGoodULNewStaState.eInit,
+	eGoodULNewStaState.eHoming:
+	    Status.StationStauts[MM_CONST.GOOD_UL_3_STA_HMI_STATE] := OverallStationStatus.eHoming;
+	
+	eGoodULNewStaState.eReady,eGoodULNewStaState.eWaitForVehicleTrigger:
+	     Status.StationStauts[MM_CONST.GOOD_UL_3_STA_HMI_STATE] := OverallStationStatus.eWaitingForParts;
+		 
+	eGoodULNewStaState.eDwell,
+	eGoodULNewStaState.eSendPalletHoldDownExtend,
+	eGoodULNewStaState.eCheckPalletHoldDownExtended,
+	eGoodULNewStaState.ePalletReleaseExtend,
+	eGoodULNewStaState.ePalletReleaseExtended,
+	eGoodULNewStaState.eKnockoffPart,
+	eGoodULNewStaState.eKnockoffExtended,
+	eGoodULNewStaState.eCheckPartKnockedOff,
+	eGoodULNewStaState.ePalletHoldDownRelease,
+	eGoodULNewStaState.ePalletHoldDownReleased:
+	    Status.StationStauts[MM_CONST.GOOD_UL_3_STA_HMI_STATE] := OverallStationStatus.eRunning;
+	
+	eGoodULNewStaState.eStopActive:
+	    Status.StationStauts[MM_CONST.GOOD_UL_3_STA_HMI_STATE] := OverallStationStatus.eCycleStop;
+    	
+	
+    ELSE;	
+	END_CASE
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearVehicleTrigger" Id="{905f03cb-9432-4ab1-a255-908a4220b79d}">
+      <Declaration><![CDATA[METHOD PUBLIC ClearVehicleTrigger : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[xTrigger := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsFaulted" Id="{3ec1e8e5-2e6b-4917-b1be-4a089285be5e}">
+      <Declaration><![CDATA[METHOD PUBLIC IsFaulted : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsFaulted := (State = eGoodULNewStaState.eUnknown OR State = eGoodULNewStaState.eError);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownEngaged" Id="{b6ac0970-16a2-4132-99cd-f68eeb669bde}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownEngaged : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownEngaged := (GVL_IO.UL_3_XPalletHoldDownRetracted_Engaged AND NOT GVL_IO.UL_3_XPalletHoldDownExtended_Home);
+IF (NOT IsPalletHoldDownEngaged) THEN
+	Status.GoodUL_3_StatusMsg:= 'Good UL 3: Check Pallet Hold Down Sensors and then hit START';
+END_IF ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IsPalletHoldDownFree" Id="{25901828-c6dd-4a06-b643-6ad31cb37384}">
+      <Declaration><![CDATA[METHOD PUBLIC IsPalletHoldDownFree : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IsPalletHoldDownFree := (NOT GVL_IO.UL_3_XPalletHoldDownRetracted_Engaged AND GVL_IO.UL_3_XPalletHoldDownExtended_Home);
+IF (NOT IsPalletHoldDownFree) THEN
+	Status.GoodUL_3_StatusMsg := 'Good UL 3: Check Pallet Hold Down Sensors and then hit START';
+END_IF ]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Ready" Id="{c240835a-53a8-4220-8fc3-6119d355e19f}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Ready : BOOL]]></Declaration>
+      <Get Name="Get" Id="{0aff5dbb-b9fc-40c8-b426-70455066d928}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[IF (LotsData.Lot.GoodUnloadEnabled) THEN
+	Ready := (State = eGoodULNewStaState.eReady);
+ELSE
+	Ready := (State = eGoodULNewStaState.eDisabledReady); 
+END_IF]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Action Name="ResetDwellTimer" Id="{ecb3fbb3-733c-4d30-8a28-1cc419575ce9}">
+      <Implementation>
+        <ST><![CDATA[DwellTimer(IN:=FALSE);]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="ResetState" Id="{3c1bf844-3950-4bb0-9aad-28f5c5ce32d7}">
+      <Declaration><![CDATA[METHOD PUBLIC ResetState : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[State := eGoodULNewStaState.eUnknown;
+NextState := eGoodULNewStaState.eUnknown;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Trigger" Id="{d7ce9ba1-1874-410b-8656-2cb7d96d59cc}">
+      <Declaration><![CDATA[PROPERTY PUBLIC Trigger : BOOL]]></Declaration>
+      <Set Name="Set" Id="{569e87bc-e84a-4370-b7b9-90b66f8c1803}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[xTrigger := Trigger;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="UpdateLotData" Id="{bfd767f3-1382-4bb7-a601-472c49a0b62c}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdateLotData : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (PartsData.Status[VUT].Premium) THEN
+	LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].PremiumCount := LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].PremiumCount +1;
+ELSIF (PartsData.Status[VUT].Good) THEN
+ 	LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].GoodCount := LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].GoodCount + 1;
+END_IF
+LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].TotalCount := LotsData.Lot.CavityCounts[PartsData.Status[VUT].CavityNumber].TotalCount + 1;
+ // reject parts shouldn't get here. If this station rejects something (e.g. faults out) then it barrel will go to reject station.]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="UpdatePartData" Id="{fbb0e036-6883-4b1e-829a-3f4e1a07fed0}">
+      <Declaration><![CDATA[METHOD PUBLIC UpdatePartData : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[PartsData.Status[VUT].UnloadTime := SYSTEMTIME_TO_STRING(Logging.fbCurrTime.systemTime);
+PartsData.Status[VUT].OverallStatus := ePartStatus.eEmpty;
+PartsData.Status[VUT].GoodUnload := TRUE;
+
+// we will write data to CSV file over here 
+IF (P_TextModeWrite.CurrWriteStep = 0) THEN 
+	P_TextModeWrite.VehicleID := VUT;
+	P_TextModeWrite.WriteData := TRUE;
+END_IF ]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="VehicleUnderTest" Id="{0343ca42-7619-4201-a190-790eef23e0eb}">
+      <Declaration><![CDATA[PROPERTY PUBLIC VehicleUnderTest : BYTE]]></Declaration>
+      <Get Name="Get" Id="{06cc5d1d-90cd-4f89-b606-612d5655f355}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VehicleUnderTest := VUT;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{854ea723-41e5-499a-9ab5-72e07fd3a695}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[VUT := VehicleUnderTest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="GoodULStation_3">
+      <LineId Id="652" Count="32" />
+      <LineId Id="832" Count="0" />
+      <LineId Id="853" Count="0" />
+      <LineId Id="833" Count="4" />
+      <LineId Id="688" Count="0" />
+      <LineId Id="854" Count="0" />
+      <LineId Id="689" Count="127" />
+      <LineId Id="276" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.Act_EngagePalletHoldDown">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.Act_FreePalletHoldDown">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.Act_KnockPartOFF">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.Act_KnockPartON">
+      <LineId Id="2" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.AssignStationStatusForHMI">
+      <LineId Id="6" Count="4" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="33" Count="1" />
+      <LineId Id="17" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="37" Count="1" />
+      <LineId Id="21" Count="9" />
+      <LineId Id="39" Count="1" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.ClearVehicleTrigger">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.IsFaulted">
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.IsPalletHoldDownEngaged">
+      <LineId Id="5" Count="1" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.IsPalletHoldDownFree">
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.Ready.Get">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.ResetDwellTimer">
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.ResetState">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.Trigger.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.UpdateLotData">
+      <LineId Id="22" Count="5" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.UpdatePartData">
+      <LineId Id="23" Count="7" />
+      <LineId Id="20" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.VehicleUnderTest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="GoodULStation_3.VehicleUnderTest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <GVL Name="Stations" Id="{6117dcb4-d77e-4c31-9d5a-7acf4ce449d9}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+	fbMMClient		: MMClient ;(* Magnemotion Client (connection) instance *)
+	fbMMSendMsg		: MM_MsgFormatter; (* Implements the Magnemotion TCP/IP Protocol and adds to TxFifo*)
+	fbMMParseRes	: MM_MsgParser; (* Reads Magnemotion RxFifo and parses the data*)
+	fbMMMonitor		: MMStatusMonitor; (* At periodic interval checks the status of MM elements*)
+	fbCycleControl	: CycleControl; (* Controls Start/Stop Logic, I/O Locks, Reset and Homing Triggers*)
+	fbPrimeMover	: PrimeMover; (* Will bring the Prime Move from a hard reset to all Vehicles in Init locations*)
+	fbStationManager :StationManager; (* Triggers the right stations upon vehicle arrival*)
+	fbVehicleManager : ARRAY[1..MM_CONST.MAX_VEHICLES] OF VehicleManager; (* Cmds Vehicles to Move, and monitors movement. Notifies arrival to Station Manager*)
+	fbRoutePlanner	: RoutePlanner; (* Implements business logic of where to send the vehicles next after each station processing  *)
+	fbLoad1Sta		: Load1Station;
+	fbLoad2Sta		: Load2Station;
+	fbLoad3Sta		: Load3Station;
+	fbLoad4Sta		: Load4Station;
+	fbOB_StopRobotSta		: OB_StopRobotClearStation;
+	fbOB_StopBeforeVisionSta: OB_StopBeforeVisionStation;
+	fbVisionSta				: VisionStation;
+	fbPistonSta				: PistonInsertStation;
+	fbIB_StopRobotSta		: IB_StopRobotClearStation;
+	fbCapInsertSta			: CapInsertStation;
+	fbGoodUnloadSta			: GoodUnloadStation;
+	fbGoodULSta_1			: GoodULStation_1;
+	fbGoodULSta_2			: GoodULStation_2;
+	fbGoodULSta_3			: GoodULStation_3;
+	fbGoodULSta_4			: GoodULStation_4;
+	fbRejectSta				: RejectStation;
+	fbBurnOffSta			: BurnOffStation;
+	fbAutoBagger			: AutoBagger;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

@@ -1,0 +1,157 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.6">
+  <GVL Name="MM_CONST" Id="{105e9102-3e00-47e4-bcaa-ea79805ebcbd}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+	B1_CMD_LEN :BYTE := 26; (* Doesn't Includes 2 Bytes START, 1 byte LEN , includes cmd + 2 Bytes CRC*) //Move Veh to Pos
+	B2_CMD_LEN :BYTE := 5; (* Doesn't includes 2 Bytes START, 1 byte LEN, includes cmd + 2 Bytes CRC*) //Startup
+	B3_CMD_LEN :BYTE := 8; (* Includes 2 Bytes START, 1 byte LEN + DATA + 2 Bytes CRC*)
+	B4_CMD_LEN :BYTE := 8; (* Includes 2 Bytes START, 1 byte LEN + DATA + 2 Bytes CRC*)
+	B5_CMD_LEN :BYTE := 7; (* Doesn't includes 2 Bytes START, 1 byte LEN, includes 2 Bytes CRC*) //Status 
+	B8_CMD_LEN :BYTE := 5; (* Doesn't includes 2 Bytes START, 1 byte LEN, includes cmd + 2 Bytes CRC*) //Reset
+	
+	B1_RES_LEN :BYTE := 29; (* Includes 2 Bytes START, 1 byte LEN + DATA + 2 Bytes CRC*)
+	B2_RES_LEN :BYTE := 8; (* Includes 2 Bytes CRC*)
+	B3_RES_LEN :BYTE := 8; (* Includes 2 Bytes CRC*)
+	B4_RES_LEN :BYTE := 8; (* Includes 2 Bytes CRC*)
+	B5_RES_LEN :BYTE := 10; (* Includes 2 Bytes CRC*)
+	B8_RES_LEN :BYTE := 8; (* Includes 2 Bytes CRC*)
+	CRC_CALC_LEN_ADJUST 	: BYTE 	:=	1; (* Include 2 btyes start, 1 byte len and remove 2 bytes of CRC*)
+	TOTAL_MSG_LEN_ADJUST 	:BYTE 	:=	3; (* Include 2 bytes start and 1 byte of len*)
+	FRAMING_HEADER			:BYTE	:=	3; (* Include 2 bytes start and 1 byte of len*)
+	
+	PLCPRJ_BUFFER_SIZE						: UDINT := 1000;(* Max. internal fifo/receiver buffer size *)
+
+	PLCPRJ_CLIENT_SEND_CYCLE_TIME			: TIME := T#10S;
+	PLCPRJ_RECEIVE_POLLING_TIME				: TIME := T#100MS;
+	PLCPRJ_RECEIVE_TIMEOUT					: TIME := T#100S;
+
+	(* Some project specific error codes *)
+	PLCPRJ_ERROR_RECEIVE_TIMEOUT			: UDINT := 16#8101;(* Receive timeout *)
+	PLCPRJ_ERROR_SENDFIFO_OVERFLOW			: UDINT := 16#8102;(* Send fifo overflow *)
+	PLCPRJ_ERROR_RECFIFO_OVERFLOW			: UDINT := 16#8103;(* Receive fifo overflow *)
+	PLCPRJ_ERROR_INVALID_FRAME_FORMAT		: UDINT := 16#8104;(* Invalid frame format/data *)
+	
+	MM_HLC_STATUS_POLLING					: TIME := T#60S;
+	MM_PATH_STATUS_POLLING					: TIME := T#30S;
+	MM_MOTOR_STATUS_POLLING					: TIME := T#60S;
+	MM_VEHICLE_STATUS_POLLING				: TIME := T#1000MS;
+	
+	STATUS_REQ_TYPE_HLC		:BYTE :=16#0;
+	STATUS_REQ_TYPE_NC		:BYTE :=16#1;
+	STATUS_REQ_TYPE_Node	:BYTE :=16#2;
+	STATUS_REQ_TYPE_Path	:BYTE :=16#3;
+	STATUS_REQ_TYPE_Vehicle	:BYTE :=16#4;
+	STATUS_REQ_TYPE_Motor	:BYTE :=16#5;
+	
+	HLC_STATE_INIT				:BYTE :=16#1;
+	HLC_STATE_DEGRADED			:BYTE :=16#2;
+	HLC_STATE_OPERATIONAL		:BYTE :=16#3;
+	
+	MAX_VEHICLES					:BYTE 	:= 20;
+	
+	MAX_STATIONS					:BYTE 	:= 13;
+	
+	LOAD_1_STA						:BYTE 	:= 1;
+	LOAD_2_STA						:BYTE 	:= 2;
+	LOAD_3_STA						:BYTE 	:= 3;
+	LOAD_4_STA						:BYTE 	:= 4;
+	STOP_BEFORE_BURNOFF_STA			:BYTE	:= 5;
+	STOP_BEFORE_VISION_STA			:BYTE	:= 6;
+	VISION_STA						:BYTE	:= 7;
+	PISTON_STA						:BYTE	:= 8;
+	CAP_STA							:BYTE	:= 9;
+	IB_STOP_ROBOT_CLEAR_STA			:BYTE	:= 10;
+	REJECT_ULOAD_STA				:BYTE	:= 11;	
+	GOOD_UNLOAD_STA					:BYTE	:= 12;	
+	OB_STOP_ROBOT_CLEAR_STA			:BYTE	:= 13;
+	GOOD_UL_1_STA					:BYTE	:= 14;
+	GOOD_UL_2_STA					:BYTE	:= 15;
+	GOOD_UL_3_STA					:BYTE	:= 16;
+	GOOD_UL_4_STA					:BYTE	:= 17;
+	
+	
+	
+	One_Meter						:REAL 	:= 1000; // One_Meter in mm
+	Curved_Section_Length			:REAL 	:= 196.3495; //90 degree 125 mm radius
+	Section_Gap						:REAL 	:= 2.2565; // gap in joints in mm
+	Vehicle_Length					:REAL 	:= 100; //vehicle length
+	Robot_Tool_Plate_Length			:REAL 	:= 480; //Tooling plate length on track in mm
+	L1L2_Dist						:REAL 	:= 116.7384; //center to center distance between Load 1 and Load 2
+	L2L3_Dist						:REAL 	:= 111.86160; //center to center distance between Load 2 and Load 3
+	L3L4_Dist						:REAL 	:= 116.7384; //center to center distance between Load 3 and Load 4
+	Min_Gap_Vehicle_Robot_Plate		:REAL 	:= 40; //minimum gap between robot tool plate end and begining of vehicle
+    MinGapInterVehStationary        :REAL   := 20; //minimum gap between vehicles when stationary
+	RejectStaAfterCurveSection      :REAL   := 50; //minimum gap between vehicles when stationary
+ 	
+	(*
+	LOAD_1_POS					     :REAL 	:= 0.8240;//0.8265;// 1.0262-0.2003;//(Curved_Section_Length +  Section_Gap + One_Meter - (L2L3_Dist/2) - L1L2_Dist)/1000; // in meters
+	LOAD_2_POS					     :REAL 	:= 0.9414;//0.9435; //1.1442-0.2003;//(Curved_Section_Length +  Section_Gap + One_Meter - (L2L3_Dist/2))/1000; // in meters
+	LOAD_3_POS					     :REAL 	:= 1.0539;//1.0549; //1.2562-0.2003;//(Curved_Section_Length +  Section_Gap + One_Meter + Section_Gap + (L2L3_Dist/2))/1000; // in meters
+	LOAD_4_POS					     :REAL 	:= 1.17002;//1.1699; //1.3745-0.2003;//(Curved_Section_Length +  Section_Gap + One_Meter + Section_Gap + (L2L3_Dist/2) + L3L4_Dist)/1000; // in meters
+	STOP_BEFORE_BURNOFF_POS		     :REAL	:= 1.5-0.2003;
+	STOP_BEFORE_VISION_POS		     :REAL	:= 2.1-0.2003+0.076+0.100; //2.0757
+	VISION_POS					     :REAL	:= 2.2005;//2.401725-0.2003;
+	PISTON_POS					     :REAL	:= 2.8169;//3.0184-0.2003; //VISION_POS + (Curved_Section_Length+ Section_Gap + One_Meter - 574.09464)/1000;
+	CAP_POS						     :REAL	:= 4.0628-0.2003;//VISION_POS + (Curved_Section_Length+ Section_Gap + One_Meter + Section_Gap + 454.84)/1000;
+	IB_STOP_ROBOT_CLEAR_POS	 		 :REAL	:= VISION_POS + (Curved_Section_Length+ Section_Gap + One_Meter - 320)/1000;  // in meters;
+	//REJECT_ULOAD_POS			     :REAL	:= VISION_POS + (Curved_Section_Length+ Section_Gap + One_Meter + Section_Gap + 816.74990)/1000;
+	GOOD_UNLOAD_POS				     :REAL	:= 4.601;//4.5996;//4.602755;//4.8;	
+	REJECT_ULOAD_POS			     :REAL	:= 0.0836; //0.2823-0.2003;// (Curved_Section_Length +  Section_Gap + RejectStaAfterCurveSection +25.4  )/1000; // in meters	
+	OB_STOP_ROBOT_CLEAR_POS  		 :REAL	:= (One_Meter - 280)/1000; // in meters
+	*)
+	
+	// New Positions for IMBAD4
+	OB_STOP_ROBOT_CLEAR_POS  		 :REAL	:= 3.8000;
+    LOAD_1_POS					     :REAL 	:= 3.95142;
+	LOAD_2_POS					     :REAL 	:= 4.05175;
+	LOAD_3_POS					     :REAL 	:= 4.1569;
+	LOAD_4_POS					     :REAL 	:= 4.2569087;
+	STOP_BEFORE_BURNOFF_POS		     :REAL	:= 4.4237; 
+	STOP_BEFORE_VISION_POS		     :REAL	:= 0.010; 
+	VISION_POS					     :REAL	:= 0.129; //0.13488; // 0.1266; nap 041919 
+	PISTON_POS					     :REAL	:= 0.8661;
+	IB_STOP_ROBOT_CLEAR_POS	 		 :REAL	:= 1.5; // not used any more
+	CAP_POS						     :REAL	:= 2.26184759;
+	GOOD_UNLOAD_POS				     :REAL	:= 3.1736 ; //never used 
+	REJECT_ULOAD_POS			     :REAL	:= 3.170 ; 
+	GOOD_UL_1_POS					 :REAL	:= 2.5888; //2.6460; //04/18/19 nap
+	GOOD_UL_2_POS					 :REAL	:= 2.70843; //2.7138; //04/18/19 nap
+	GOOD_UL_3_POS					 :REAL	:= 2.8381; //04/18/19 nap
+	GOOD_UL_4_POS					 :REAL	:= 2.9055; //2.958; // 2.905346;  Changed by ALM 03/20/19
+	
+	
+	
+	AUTOBAGGER_HMI_STATE						:BYTE   := 1;
+	CAP_STA_HMI_STATE							:BYTE	:= 2;
+	CYCLE_CONTROL_HMI_STATE						:BYTE	:= 3;
+	GOOD_UNLOAD_STA_HMI_STATE					:BYTE	:= 4;
+	IB_STOP_ROBOT_CLEAR_STA_HMI_STATE			:BYTE	:= 5;
+	IONIZER_HMI_STATE							:BYTE 	:= 6;
+	LOAD_1_STA_HMI_STATE						:BYTE 	:= 7;
+	LOAD_2_STA_HMI_STATE						:BYTE 	:= 8;
+	LOAD_3_STA_HMI_STATE						:BYTE 	:= 9;
+	LOAD_4_STA_HMI_STATE						:BYTE 	:= 10;
+	MAIN_CONTROL_HMI_STATE						:BYTE	:= 11;
+	OB_STOP_ROBOT_CLEAR_STA_HMI_STATE			:BYTE	:= 12;
+	PISTON_STA_HMI_STATE						:BYTE	:= 13;
+	PRIME_MOVER_HMI_STATE						:BYTE	:= 14;
+	REJECT_ULOAD_STA_HMI_STATE					:BYTE	:= 15;
+	ROBOT_STA_HMI_STATE							:BYTE 	:= 16;
+	VISION_STA_HMI_STATE						:BYTE	:= 17;
+	BURNOFF_STA_HMI_STATE						:BYTE	:= 18;
+	GOOD_UL_1_STA_HMI_STATE						:BYTE	:= 19;
+	GOOD_UL_2_STA_HMI_STATE						:BYTE	:= 20;
+	GOOD_UL_3_STA_HMI_STATE						:BYTE	:= 21;
+	GOOD_UL_4_STA_HMI_STATE						:BYTE	:= 22;
+	
+	
+	
+	
+	
+	
+END_VAR
+
+]]></Declaration>
+  </GVL>
+</TcPlcObject>

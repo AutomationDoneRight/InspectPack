@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.12">
+  <DUT Name="ST_ResD5" Id="{60264749-0ce7-4a54-b85b-807883103e15}">
+    <Declaration><![CDATA[TYPE ST_ResD5 :
+STRUCT
+	VehicleID		:UINT;
+	VehiclePresent	:BYTE;
+	PathID			:UINT;
+	DestPathID		:UINT;
+	VehiclePos		:REAL;
+	VehicleSpeed	:REAL;
+	VehicleCmdType	:BYTE;
+	VehicleFlags	:BYTE;
+	VehicleCmdPos	:REAL; (* We are not coding the vehicle station which would have overlapped with these bytes*)
+	CRC1			:BYTE;	    (* 1 byte*)
+	CRC2			:BYTE;	    (* 1 byte*)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>
